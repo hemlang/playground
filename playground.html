@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hemlock Playground 🌲</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #1a1b26;
+            --bg-darker: #16161e;
+            --bg-lighter: #24283b;
+            --text: #a9b1d6;
+            --text-dim: #565f89;
+            --accent: #7aa2f7;
+            --accent-green: #9ece6a;
+            --accent-red: #f7768e;
+            --accent-yellow: #e0af68;
+            --accent-purple: #bb9af7;
+            --border: #3b4261;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: var(--bg-darker);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .logo-icon {
+            font-size: 1.5rem;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            background: var(--bg-lighter);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 500;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button:hover {
+            background: var(--border);
+        }
+
+        button.primary {
+            background: var(--accent);
+            color: var(--bg-dark);
+            border-color: var(--accent);
+        }
+
+        button.primary:hover {
+            background: #8fb0fa;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .editor-pane, .output-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .editor-pane {
+            border-right: 1px solid var(--border);
+        }
+
+        .pane-header {
+            background: var(--bg-darker);
+            padding: 8px 16px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--border);
+        }
+
+        #editor {
+            flex: 1;
+            width: 100%;
+            background: var(--bg-dark);
+            color: var(--text);
+            border: none;
+            padding: 16px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+            tab-size: 4;
+        }
+
+        #editor::placeholder {
+            color: var(--text-dim);
+        }
+
+        .output-container {
+            flex: 1;
+            overflow: auto;
+            padding: 16px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .output-stdout {
+            color: var(--text);
+        }
+
+        .output-stderr {
+            color: var(--accent-red);
+        }
+
+        .output-info {
+            color: var(--text-dim);
+            font-style: italic;
+        }
+
+        .output-success {
+            color: var(--accent-green);
+        }
+
+        .output-error {
+            color: var(--accent-red);
+        }
+
+        .status-bar {
+            background: var(--bg-darker);
+            border-top: 1px solid var(--border);
+            padding: 6px 16px;
+            font-size: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--text-dim);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent-green);
+        }
+
+        .status-dot.error {
+            background: var(--accent-red);
+        }
+
+        .status-dot.running {
+            background: var(--accent-yellow);
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .examples-dropdown {
+            position: relative;
+        }
+
+        .examples-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 4px;
+            background: var(--bg-darker);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            min-width: 200px;
+            display: none;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .examples-menu.show {
+            display: block;
+        }
+
+        .examples-menu button {
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            text-align: left;
+            padding: 10px 14px;
+        }
+
+        .examples-menu button:hover {
+            background: var(--bg-lighter);
+        }
+
+        .examples-menu button:first-child {
+            border-radius: 6px 6px 0 0;
+        }
+
+        .examples-menu button:last-child {
+            border-radius: 0 0 6px 6px;
+        }
+
+        .keyboard-hint {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-left: 8px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <span class="logo-icon">🌲</span>
+            <span>Hemlock Playground</span>
+        </div>
+        <div class="toolbar">
+            <div class="examples-dropdown">
+                <button id="examples-btn">
+                    📚 Examples
+                    <span style="font-size: 0.7em;">▼</span>
+                </button>
+                <div class="examples-menu" id="examples-menu">
+                    <button data-example="hello">Hello World</button>
+                    <button data-example="fibonacci">Fibonacci</button>
+                    <button data-example="fizzbuzz">FizzBuzz</button>
+                    <button data-example="async">Async/Await</button>
+                    <button data-example="json">JSON Parsing</button>
+                </div>
+            </div>
+            <button id="check-btn">
+                ✓ Check
+            </button>
+            <button id="run-btn" class="primary">
+                ▶ Run
+                <span class="keyboard-hint">Ctrl+Enter</span>
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div class="editor-pane">
+            <div class="pane-header">main.hml</div>
+            <textarea id="editor" placeholder="// Write your Hemlock code here...
+
+fn main() {
+    print(&quot;Hello, Hemlock! 🌲&quot;)
+}
+
+main()"></textarea>
+        </div>
+        <div class="output-pane">
+            <div class="pane-header">Output</div>
+            <div class="output-container" id="output">
+                <span class="output-info">Press Run to execute your code...</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div class="status-item">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Ready</span>
+        </div>
+        <div class="status-item">
+            <span id="version-info">Hemlock Playground v1.0</span>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_URL = 'http://localhost:8080';  // Change to your API server
+
+        // Example programs
+        const EXAMPLES = {
+            hello: `// Hello World in Hemlock
+fn main() {
+    print("Hello, World! 🌲")
+    print("Welcome to Hemlock!")
+}
+
+main()`,
+
+            fibonacci: `// Fibonacci sequence
+fn fib(n) {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn main() {
+    print("Fibonacci sequence:")
+    for i in 0..15 {
+        print("fib(\${i}) = \${fib(i)}")
+    }
+}
+
+main()`,
+
+            fizzbuzz: `// FizzBuzz
+fn fizzbuzz(n) {
+    for i in 1..=n {
+        if i % 15 == 0 {
+            print("FizzBuzz")
+        } else if i % 3 == 0 {
+            print("Fizz")
+        } else if i % 5 == 0 {
+            print("Buzz")
+        } else {
+            print(i)
+        }
+    }
+}
+
+fn main() {
+    fizzbuzz(30)
+}
+
+main()`,
+
+            async: `// Async/Await example
+import std/time
+
+async fn fetch_data(id) {
+    print("Fetching data \${id}...")
+    time.sleep(500)  // Simulate network delay
+    return "Data from \${id}"
+}
+
+async fn main() {
+    // Concurrent fetching
+    tasks = [
+        spawn fetch_data("A"),
+        spawn fetch_data("B"),
+        spawn fetch_data("C")
+    ]
+    
+    for task in tasks {
+        result = await task
+        print("Got: \${result}")
+    }
+    
+    print("All done!")
+}
+
+main()`,
+
+            json: `// JSON parsing
+import std/json
+
+fn main() {
+    data = {
+        name: "Hemlock",
+        version: "1.1.0",
+        features: ["fast", "safe", "fun"],
+        config: {
+            debug: true,
+            threads: 4
+        }
+    }
+    
+    // Serialize to JSON
+    json_str = json.stringify(data, indent: 2)
+    print("Serialized:")
+    print(json_str)
+    print("")
+    
+    // Parse back
+    parsed = json.parse(json_str)
+    print("Parsed name: \${parsed.name}")
+    print("Features: \${parsed.features}")
+}
+
+main()`
+        };
+
+        // DOM elements
+        const editor = document.getElementById('editor');
+        const output = document.getElementById('output');
+        const runBtn = document.getElementById('run-btn');
+        const checkBtn = document.getElementById('check-btn');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const versionInfo = document.getElementById('version-info');
+        const examplesBtn = document.getElementById('examples-btn');
+        const examplesMenu = document.getElementById('examples-menu');
+
+        // State
+        let isRunning = false;
+
+        // Fetch version info on load
+        async function fetchVersion() {
+            try {
+                const res = await fetch(`${API_URL}/version`);
+                const data = await res.json();
+                versionInfo.textContent = `Hemlock ${data.hemlock_version} | API v${data.api_version}`;
+            } catch (e) {
+                statusDot.classList.add('error');
+                statusText.textContent = 'API unavailable';
+            }
+        }
+
+        // Set status
+        function setStatus(status, isError = false, isRunning = false) {
+            statusText.textContent = status;
+            statusDot.classList.remove('error', 'running');
+            if (isError) statusDot.classList.add('error');
+            if (isRunning) statusDot.classList.add('running');
+        }
+
+        // Run code
+        async function runCode() {
+            if (isRunning) return;
+            
+            const code = editor.value;
+            if (!code.trim()) {
+                output.innerHTML = '<span class="output-info">No code to run</span>';
+                return;
+            }
+
+            isRunning = true;
+            runBtn.disabled = true;
+            checkBtn.disabled = true;
+            setStatus('Running...', false, true);
+            output.innerHTML = '<span class="output-info">Executing...</span>';
+
+            try {
+                const res = await fetch(`${API_URL}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await res.json();
+                
+                let html = '';
+                
+                if (data.stdout) {
+                    html += `<span class="output-stdout">${escapeHtml(data.stdout)}</span>`;
+                }
+                
+                if (data.stderr) {
+                    if (html) html += '\n';
+                    html += `<span class="output-stderr">${escapeHtml(data.stderr)}</span>`;
+                }
+                
+                if (!data.stdout && !data.stderr) {
+                    html = '<span class="output-info">(no output)</span>';
+                }
+                
+                // Add execution info
+                html += '\n\n';
+                if (data.timed_out) {
+                    html += `<span class="output-error">⏱ Execution timed out</span>\n`;
+                }
+                if (data.truncated) {
+                    html += `<span class="output-info">⚠ Output was truncated</span>\n`;
+                }
+                
+                const statusClass = data.success ? 'output-success' : 'output-error';
+                const statusIcon = data.success ? '✓' : '✗';
+                html += `<span class="${statusClass}">${statusIcon} Exit code: ${data.exit_code}</span>`;
+                html += `<span class="output-info"> | ${data.execution_time_ms}ms</span>`;
+                
+                output.innerHTML = html;
+                setStatus(data.success ? 'Success' : 'Error', !data.success);
+
+            } catch (e) {
+                output.innerHTML = `<span class="output-error">Failed to connect to API: ${e.message}</span>`;
+                setStatus('API Error', true);
+            } finally {
+                isRunning = false;
+                runBtn.disabled = false;
+                checkBtn.disabled = false;
+            }
+        }
+
+        // Check syntax
+        async function checkSyntax() {
+            if (isRunning) return;
+            
+            const code = editor.value;
+            if (!code.trim()) {
+                output.innerHTML = '<span class="output-info">No code to check</span>';
+                return;
+            }
+
+            setStatus('Checking...', false, true);
+
+            try {
+                const res = await fetch(`${API_URL}/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await res.json();
+                
+                if (data.valid) {
+                    output.innerHTML = '<span class="output-success">✓ Syntax OK</span>';
+                    setStatus('Valid');
+                } else {
+                    output.innerHTML = `<span class="output-error">${escapeHtml(data.errors)}</span>`;
+                    setStatus('Syntax Error', true);
+                }
+
+            } catch (e) {
+                output.innerHTML = `<span class="output-error">Failed to connect to API: ${e.message}</span>`;
+                setStatus('API Error', true);
+            }
+        }
+
+        // Load example
+        function loadExample(name) {
+            if (EXAMPLES[name]) {
+                editor.value = EXAMPLES[name];
+                examplesMenu.classList.remove('show');
+                output.innerHTML = '<span class="output-info">Example loaded. Press Run to execute...</span>';
+            }
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event listeners
+        runBtn.addEventListener('click', runCode);
+        checkBtn.addEventListener('click', checkSyntax);
+
+        // Keyboard shortcut
+        editor.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                runCode();
+            }
+            // Tab handling
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = editor.selectionStart;
+                const end = editor.selectionEnd;
+                editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 4;
+            }
+        });
+
+        // Examples dropdown
+        examplesBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            examplesMenu.classList.toggle('show');
+        });
+
+        document.addEventListener('click', () => {
+            examplesMenu.classList.remove('show');
+        });
+
+        examplesMenu.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                loadExample(btn.dataset.example);
+            });
+        });
+
+        // Initialize
+        fetchVersion();
+    </script>
+</body>
+</html>
