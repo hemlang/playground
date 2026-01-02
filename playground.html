@@ -352,14 +352,8 @@
                     <button data-example="json">JSON Parsing</button>
                 </div>
             </div>
-            <button id="check-btn">
-                ✓ Check
-                <span class="keyboard-hint">Ctrl+Shift+Enter</span>
-            </button>
-            <button id="run-btn" class="primary">
-                ▶ Run
-                <span class="keyboard-hint">Ctrl+Enter</span>
-            </button>
+            <button id="check-btn">✓ Check</button>
+            <button id="run-btn" class="primary">▶ Run</button>
         </div>
     </header>
 
@@ -685,8 +679,6 @@
 
         // State
         let isRunning = false;
-        let checkTimeout = null;
-        const CHECK_DELAY = 500;  // ms after typing stops
 
         // Syntax highlighting
         function updateHighlight() {
@@ -708,37 +700,6 @@
             highlight.scrollTop = editor.scrollTop;
             highlight.scrollLeft = editor.scrollLeft;
             lineNumbers.scrollTop = editor.scrollTop;
-        }
-
-        // Debounced auto-check
-        function scheduleAutoCheck() {
-            if (checkTimeout) {
-                clearTimeout(checkTimeout);
-            }
-            checkTimeout = setTimeout(autoCheck, CHECK_DELAY);
-        }
-
-        async function autoCheck() {
-            const code = editor.value;
-            if (!code.trim() || isRunning) return;
-
-            try {
-                const res = await fetch(`${API_URL}/check`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code })
-                });
-
-                const data = await res.json();
-
-                if (data.valid) {
-                    setStatus('Valid');
-                } else {
-                    setStatus('Type errors', true);
-                }
-            } catch (e) {
-                // Silently fail auto-check - don't spam errors
-            }
         }
 
         // Fetch version info on load
@@ -885,27 +846,11 @@
         checkBtn.addEventListener('click', checkSyntax);
 
         // Syntax highlighting events
-        editor.addEventListener('input', () => {
-            updateHighlight();
-            scheduleAutoCheck();
-        });
+        editor.addEventListener('input', updateHighlight);
         editor.addEventListener('scroll', syncScroll);
 
-        // Keyboard shortcuts
+        // Tab handling
         editor.addEventListener('keydown', (e) => {
-            // Check: Ctrl+Shift+Enter
-            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Enter' || e.keyCode === 13)) {
-                e.preventDefault();
-                checkSyntax();
-                return;
-            }
-            // Run: Ctrl+Enter
-            if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
-                e.preventDefault();
-                runCode();
-                return;
-            }
-            // Tab handling
             if (e.key === 'Tab') {
                 e.preventDefault();
                 const start = editor.selectionStart;
