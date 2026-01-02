@@ -289,6 +289,7 @@
             border-right: 1px solid var(--border);
             overflow: hidden;
             min-width: 40px;
+            white-space: pre-wrap;
         }
 
         .editor-content {
@@ -892,12 +893,17 @@
 
         // Keyboard shortcuts
         editor.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
+            // Check: Ctrl+Shift+Enter
+            if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Enter' || e.keyCode === 13)) {
                 e.preventDefault();
                 checkSyntax();
-            } else if (e.ctrlKey && e.key === 'Enter') {
+                return;
+            }
+            // Run: Ctrl+Enter
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.keyCode === 13)) {
                 e.preventDefault();
                 runCode();
+                return;
             }
             // Tab handling
             if (e.key === 'Tab') {
