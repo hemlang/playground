@@ -103,8 +103,8 @@ describe("Grove Server", fn() {
     test("grove.hml has configuration", fn() {
         let content = read_file(`${BASE_DIR}/grove.hml`);
         expect(content.contains("CONFIG")).to_be_true();
-        expect(content.contains("http_port")).to_be_true();
-        expect(content.contains("lsp_port")).to_be_true();
+        expect(content.contains("port")).to_be_true();
+        expect(content.contains("max_execution_time")).to_be_true();
     });
 });
 

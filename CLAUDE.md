@@ -45,7 +45,7 @@ hemlang/playground/
 ├── LICENSE             # MIT License
 ├── README.md           # User documentation (TODO)
 ├── package.json        # Hemlock package manifest
-├── grove.hml           # Backend server (skeleton)
+├── grove.hml           # Backend server (working HTTP server)
 ├── playground.html     # Frontend (Phase 1-2 complete)
 ├── examples/           # Example Hemlock programs
 │   ├── hello.hml
@@ -141,17 +141,19 @@ hemlock --version
 
 ## Implementation Phases
 
-### Phase 1: Basic Execution ✓
-- [x] Grove skeleton with `/execute` endpoint design
+### Phase 1: Basic Execution ✓ (Complete)
+- [x] Grove HTTP server with `/execute`, `/health`, `/version` endpoints
+- [x] Code execution with `--sandbox` and timeout protection
+- [x] CORS support for browser requests
 - [x] HTML frontend with textarea + run button
-- [x] Example programs
+- [x] Example programs (hello, fibonacci, fizzbuzz, async, json)
 
-### Phase 2: Monaco Editor (In Progress)
+### Phase 2: Monaco Editor (Next)
 - [x] Basic playground.html with Tokyo Night theme
 - [ ] Replace textarea with Monaco Editor
 - [ ] Add Hemlock syntax highlighting (Monarch grammar)
 
-### Phase 3: LSP Integration
+### Phase 3: LSP Integration (Future)
 - [ ] Add WebSocket `/lsp` endpoint to Grove
 - [ ] Implement WS ↔ TCP bridge with framing translation
 - [ ] Start `hemlock lsp --tcp 5007` as companion process
@@ -236,6 +238,25 @@ Built-in protections:
 - Output truncation (max 64KB)
 - Code size limits (max 100KB)
 - Temp file cleanup after each execution
+
+## Quick Start
+
+```bash
+# Start the Grove server (from playground directory)
+hemlock grove.hml
+
+# Or with custom port
+GROVE_PORT=3000 hemlock grove.hml
+
+# Test the API
+curl http://localhost:8080/health
+curl http://localhost:8080/version
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"code": "print(42);"}' \
+     http://localhost:8080/execute
+```
+
+Then open `playground.html` in a browser and update `API_URL` to point to your server.
 
 ## Testing
 

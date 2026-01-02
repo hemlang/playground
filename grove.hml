@@ -1,37 +1,18 @@
 // Grove - Hemlock Playground Backend Server
 // ==========================================
 //
-// A WebSocket and HTTP server that bridges the playground frontend to:
-// 1. Hemlock LSP server (via WebSocket /lsp endpoint)
-// 2. Code execution (via HTTP POST /execute endpoint)
+// Minimal HTTP server for the Hemlock Playground.
+// Provides code execution via POST /execute endpoint.
 //
-// Architecture:
-// ┌─────────────────────────────────────────────────────────────────┐
-// │  Browser                                                        │
-// │  ┌───────────────────────────────────────────────────────────┐  │
-// │  │  Playground (Monaco + monaco-languageclient)              │  │
-// │  └─────────────────┬────────────────────┬────────────────────┘  │
-// │                    │ WebSocket /lsp     │ HTTP POST /execute    │
-// └────────────────────┼────────────────────┼───────────────────────┘
-//                      │                    │
-//                      ▼                    ▼
-// ┌─────────────────────────────────────────────────────────────────┐
-// │  Grove Server                                                   │
-// │  ┌─────────────────────────┐    ┌─────────────────────────────┐ │
-// │  │  WebSocket → TCP Bridge │    │  HTTP API                   │ │
-// │  │  /lsp                   │    │  /execute, /health          │ │
-// │  └───────────┬─────────────┘    └──────────────┬──────────────┘ │
-// │              │ TCP                             │ subprocess     │
-// │              ▼                                 ▼                │
-// │  ┌─────────────────────────┐    ┌─────────────────────────────┐ │
-// │  │  hemlock lsp --tcp 5007 │    │  hemlock run <tempfile>     │ │
-// │  └─────────────────────────┘    └─────────────────────────────┘ │
-// └─────────────────────────────────────────────────────────────────┘
+// Usage:
+//   hemlock grove.hml
+//   GROVE_PORT=3000 hemlock grove.hml
 
+import { TcpListener } from "@stdlib/net";
 import { stringify, parse } from "@stdlib/json";
-import { now, time_ms } from "@stdlib/time";
-import { read_file, write_file, exists, remove } from "@stdlib/fs";
-import { exec, wait } from "@stdlib/process";
+import { time_ms } from "@stdlib/time";
+import { write_file, exists, remove_file } from "@stdlib/fs";
+import { run_capture, quote } from "@stdlib/shell";
 import { getenv } from "@stdlib/env";
 
 // =============================================================================
@@ -39,27 +20,19 @@ import { getenv } from "@stdlib/env";
 // =============================================================================
 
 let CONFIG = {
-    http_port: 8080,
-    lsp_port: 5007,
-    max_execution_time: 10000,  // 10 seconds in ms
-    max_output_size: 65536,     // 64KB
-    max_code_size: 102400,      // 100KB
+    port: 8080,
+    max_execution_time_ms: 10000,
+    max_output_size: 65536,
+    max_code_size: 102400,
     temp_dir: "/tmp/hemlock-playground",
-    hemlock_path: "hemlock"     // Assumes hemlock is in PATH
+    hemlock_path: "hemlock"
 };
 
-// Override from environment
 fn load_config() {
     let port = getenv("GROVE_PORT");
     if (port != null) {
-        CONFIG["http_port"] = i32(port);
+        CONFIG["port"] = i32(port);
     }
-
-    let lsp = getenv("GROVE_LSP_PORT");
-    if (lsp != null) {
-        CONFIG["lsp_port"] = i32(lsp);
-    }
-
     let hemlock = getenv("HEMLOCK_PATH");
     if (hemlock != null) {
         CONFIG["hemlock_path"] = hemlock;
@@ -67,12 +40,150 @@ fn load_config() {
 }
 
 // =============================================================================
-// Execution Engine
+// String Utilities
+// =============================================================================
+
+fn trim(s) {
+    let start = 0;
+    let end = s.length;
+    while (start < end) {
+        let ch = s.char_at(start);
+        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+            break;
+        }
+        start = start + 1;
+    }
+    while (end > start) {
+        let ch = s.char_at(end - 1);
+        if (ch != ' ' && ch != '\t' && ch != '\n' && ch != '\r') {
+            break;
+        }
+        end = end - 1;
+    }
+    return s.substr(start, end - start);
+}
+
+fn to_lower(s) {
+    let result = "";
+    for (let i = 0; i < s.length; i = i + 1) {
+        let ch = s.char_at(i);
+        let code: i32 = ch;
+        if (code >= 65 && code <= 90) {
+            result = result + rune_to_string(code + 32);
+        } else {
+            result = result + rune_to_string(ch);
+        }
+    }
+    return result;
+}
+
+fn rune_to_string(code) {
+    let r: rune = code;
+    return "" + r;
+}
+
+// =============================================================================
+// HTTP Parsing
+// =============================================================================
+
+fn parse_request(data) {
+    let lines = data.split("\r\n");
+    if (lines.length == 0) {
+        return null;
+    }
+
+    // Parse request line: "GET /path HTTP/1.1"
+    let request_line = lines[0];
+    let parts = request_line.split(" ");
+    if (parts.length < 2) {
+        return null;
+    }
+
+    let method = parts[0];
+    let full_url = parts[1];
+
+    // Split path and query string
+    let path = full_url;
+    let query = "";
+    let q_idx = full_url.find("?");
+    if (q_idx != -1) {
+        path = full_url.substr(0, q_idx);
+        query = full_url.substr(q_idx + 1, full_url.length - q_idx - 1);
+    }
+
+    // Parse headers
+    let headers = {};
+    let body_start = -1;
+    for (let i = 1; i < lines.length; i = i + 1) {
+        let line = lines[i];
+        if (line == "") {
+            body_start = i + 1;
+            break;
+        }
+        let colon_idx = line.find(":");
+        if (colon_idx != -1) {
+            let name = to_lower(trim(line.substr(0, colon_idx)));
+            let value = trim(line.substr(colon_idx + 1, line.length - colon_idx - 1));
+            headers[name] = value;
+        }
+    }
+
+    // Get body
+    let body = "";
+    if (body_start != -1 && body_start < lines.length) {
+        let body_lines = [];
+        for (let i = body_start; i < lines.length; i = i + 1) {
+            body_lines.push(lines[i]);
+        }
+        body = body_lines.join("\r\n");
+    }
+
+    return {
+        method: method,
+        path: path,
+        query: query,
+        headers: headers,
+        body: body
+    };
+}
+
+// =============================================================================
+// HTTP Response Building
+// =============================================================================
+
+fn build_response(status, status_text, content_type, body) {
+    let response = `HTTP/1.1 ${status} ${status_text}\r\n`;
+    response = response + `Content-Type: ${content_type}\r\n`;
+    response = response + `Content-Length: ${body.length}\r\n`;
+    response = response + "Access-Control-Allow-Origin: *\r\n";
+    response = response + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
+    response = response + "Access-Control-Allow-Headers: Content-Type\r\n";
+    response = response + "Connection: close\r\n";
+    response = response + "\r\n";
+    response = response + body;
+    return response;
+}
+
+fn json_response(status, data) {
+    let body = stringify(data);
+    let status_text = "OK";
+    if (status == 400) { status_text = "Bad Request"; }
+    if (status == 404) { status_text = "Not Found"; }
+    if (status == 500) { status_text = "Internal Server Error"; }
+    return build_response(status, status_text, "application/json", body);
+}
+
+fn html_response(status, body) {
+    return build_response(status, "OK", "text/html; charset=utf-8", body);
+}
+
+// =============================================================================
+// Code Execution
 // =============================================================================
 
 fn ensure_temp_dir() {
     if (!exists(CONFIG["temp_dir"])) {
-        exec("mkdir", ["-p", CONFIG["temp_dir"]]);
+        run_capture(["mkdir", "-p", CONFIG["temp_dir"]]);
     }
 }
 
@@ -80,11 +191,11 @@ fn execute_code(code) {
     let start_time = time_ms();
 
     // Validate code size
-    if (len(code) > CONFIG["max_code_size"]) {
+    if (code.length > CONFIG["max_code_size"]) {
         return {
             success: false,
             stdout: "",
-            stderr: "Error: Code exceeds maximum size limit",
+            stderr: "Error: Code exceeds maximum size limit (100KB)",
             exit_code: 1,
             execution_time_ms: 0,
             timed_out: false,
@@ -97,32 +208,34 @@ fn execute_code(code) {
     let temp_file = `${CONFIG["temp_dir"]}/exec_${time_ms()}.hml`;
     write_file(temp_file, code);
 
-    // Execute with sandbox and timeout
-    let cmd = CONFIG["hemlock_path"];
-    let args = ["--sandbox", temp_file];
+    // Execute with sandbox using timeout command
+    let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
+    let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${quote(temp_file)} 2>&1`;
 
-    let result = exec(cmd, args);
-    let exit_code = wait(result);
-
+    let result = run_capture(cmd);
     let execution_time = time_ms() - start_time;
-    let timed_out = execution_time >= CONFIG["max_execution_time"];
 
-    // Read output (would need to capture from exec)
-    // TODO: Implement proper stdout/stderr capture
-    let stdout = "";
-    let stderr = "";
+    // Check if timed out (exit code 124 from timeout command)
+    let timed_out = result["code"] == 124;
+
+    // Truncate output if too large
+    let stdout = result["stdout"];
     let truncated = false;
+    if (stdout.length > CONFIG["max_output_size"]) {
+        stdout = stdout.substr(0, CONFIG["max_output_size"]);
+        truncated = true;
+    }
 
-    // Cleanup
+    // Cleanup temp file
     if (exists(temp_file)) {
-        remove(temp_file);
+        remove_file(temp_file);
     }
 
     return {
-        success: exit_code == 0,
+        success: result["code"] == 0,
         stdout: stdout,
-        stderr: stderr,
-        exit_code: exit_code,
+        stderr: result["stderr"],
+        exit_code: result["code"],
         execution_time_ms: execution_time,
         timed_out: timed_out,
         truncated: truncated
@@ -130,31 +243,131 @@ fn execute_code(code) {
 }
 
 // =============================================================================
-// HTTP Response Helpers
+// Request Handlers
 // =============================================================================
 
-fn json_response(data) {
-    return stringify(data);
-}
-
-fn health_response() {
-    return json_response({
+fn handle_health() {
+    return json_response(200, {
         status: "ok",
         hemlock_version: "1.6.4"
     });
 }
 
-fn version_response() {
-    return json_response({
+fn handle_version() {
+    return json_response(200, {
         api_version: "1.0.0",
         hemlock_version: "1.6.4",
-        max_execution_time: CONFIG["max_execution_time"] / 1000,
+        max_execution_time: CONFIG["max_execution_time_ms"] / 1000,
         max_output_size: CONFIG["max_output_size"]
     });
 }
 
+fn handle_execute(body) {
+    // Parse JSON body
+    let data = null;
+    try {
+        data = parse(body);
+    } catch (e) {
+        return json_response(400, {
+            success: false,
+            error: "Invalid JSON body"
+        });
+    }
+
+    // Get code from body
+    let code = data["code"];
+    if (code == null || code == "") {
+        return json_response(400, {
+            success: false,
+            error: "Missing 'code' field"
+        });
+    }
+
+    // Execute and return result
+    let result = execute_code(code);
+    return json_response(200, result);
+}
+
+fn handle_options() {
+    // CORS preflight
+    return build_response(204, "No Content", "text/plain", "");
+}
+
+fn handle_not_found(path) {
+    return json_response(404, {
+        error: "Not found",
+        path: path
+    });
+}
+
 // =============================================================================
-// Main Entry Point
+// Connection Handler
+// =============================================================================
+
+fn handle_connection(stream) {
+    try {
+        // Read request
+        let raw_data = stream.read(65536);
+        if (raw_data == null || raw_data.length == 0) {
+            stream.close();
+            return;
+        }
+
+        // Convert buffer to string
+        let data = "";
+        for (let i = 0; i < raw_data.length; i = i + 1) {
+            let b: i32 = raw_data[i];
+            data = data + rune_to_string(b);
+        }
+
+        if (data == "") {
+            stream.close();
+            return;
+        }
+
+        // Parse HTTP request
+        let req = parse_request(data);
+        if (req == null) {
+            stream.close();
+            return;
+        }
+
+        // Log request
+        print(`${req["method"]} ${req["path"]}`);
+
+        // Route request
+        let response = "";
+        let method = req["method"];
+        let path = req["path"];
+
+        if (method == "OPTIONS") {
+            response = handle_options();
+        } else if (path == "/health" && method == "GET") {
+            response = handle_health();
+        } else if (path == "/version" && method == "GET") {
+            response = handle_version();
+        } else if (path == "/execute" && method == "POST") {
+            response = handle_execute(req["body"]);
+        } else {
+            response = handle_not_found(path);
+        }
+
+        // Send response
+        stream.write(response);
+        stream.close();
+
+    } catch (e) {
+        print(`Error handling connection: ${e}`);
+        try {
+            stream.close();
+        } catch (e2) {
+            // Ignore close errors
+        }
+    }
+}
+
+// =============================================================================
+// Main Server
 // =============================================================================
 
 fn main() {
@@ -162,22 +375,31 @@ fn main() {
 
     print("Grove - Hemlock Playground Server");
     print("==================================");
-    print(`HTTP Port: ${CONFIG["http_port"]}`);
-    print(`LSP Port:  ${CONFIG["lsp_port"]}`);
+    print(`Listening on http://0.0.0.0:${CONFIG["port"]}`);
     print("");
     print("Endpoints:");
-    print("  GET  /health  - Server health check");
-    print("  GET  /version - Version and limits");
-    print("  POST /execute - Execute Hemlock code");
-    print("  WS   /lsp     - LSP WebSocket bridge");
+    print("  GET  /health  - Health check");
+    print("  GET  /version - Version info");
+    print("  POST /execute - Execute code");
+    print("");
+    print("Press Ctrl+C to stop.");
     print("");
 
-    // TODO: Implement HTTP server using std/net or std/http
-    // TODO: Start LSP subprocess with: hemlock lsp --tcp $LSP_PORT
-    // TODO: Bridge WebSocket connections to LSP TCP
+    // Create TCP listener
+    let listener = null;
+    try {
+        listener = TcpListener("0.0.0.0", CONFIG["port"]);
+    } catch (e) {
+        print(`Error: Failed to start server on port ${CONFIG["port"]}`);
+        print(`${e}`);
+        return;
+    }
 
-    print("Note: Full HTTP/WebSocket implementation requires libwebsockets");
-    print("For now, this is a skeleton demonstrating the architecture.");
+    // Accept connections
+    while (true) {
+        let stream = listener.accept();
+        handle_connection(stream);
+    }
 }
 
 main();
