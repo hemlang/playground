@@ -5,7 +5,7 @@ import { sleep } from "@stdlib/time";
 
 async fn fetch_data(id) {
     print(`Fetching data ${id}...`);
-    sleep(500);  // Simulate network delay
+    sleep(0.5);  // Simulate network delay
     return `Data from ${id}`;
 }
 
