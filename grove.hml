@@ -335,9 +335,51 @@ fn handle_not_found(path) {
 // Connection Handler
 // =============================================================================
 
+// Helper to convert raw bytes to string
+fn bytes_to_string(raw_data) {
+    let result = "";
+    for (let i = 0; i < raw_data.length; i = i + 1) {
+        let b: i32 = raw_data[i];
+        result = result + rune_to_string(b);
+    }
+    return result;
+}
+
+// Parse headers from partial data to find Content-Length
+fn find_content_length(data) {
+    let header_end = data.find("\r\n\r\n");
+    if (header_end == -1) {
+        return -1;  // Headers not complete yet
+    }
+
+    let headers_str = to_lower(data.substr(0, header_end));
+    let cl_idx = headers_str.find("content-length:");
+    if (cl_idx == -1) {
+        return 0;  // No content-length header, assume no body
+    }
+
+    // Find the value after "content-length:"
+    let start = cl_idx + 15;  // Length of "content-length:"
+    while (start < headers_str.length && headers_str.char_at(start) == ' ') {
+        start = start + 1;
+    }
+
+    let end = start;
+    while (end < headers_str.length) {
+        let ch = headers_str.char_at(end);
+        if (ch == '\r' || ch == '\n') {
+            break;
+        }
+        end = end + 1;
+    }
+
+    let value_str = headers_str.substr(start, end - start);
+    return i32(value_str);
+}
+
 fn handle_connection(stream) {
     try {
-        // Read request
+        // Read initial data
         let raw_data = stream.read(65536);
         if (raw_data == null || raw_data.length == 0) {
             stream.close();
@@ -345,15 +387,31 @@ fn handle_connection(stream) {
         }
 
         // Convert buffer to string
-        let data = "";
-        for (let i = 0; i < raw_data.length; i = i + 1) {
-            let b: i32 = raw_data[i];
-            data = data + rune_to_string(b);
-        }
+        let data = bytes_to_string(raw_data);
 
         if (data == "") {
             stream.close();
             return;
+        }
+
+        // Check if we need to read more data based on Content-Length
+        let header_end = data.find("\r\n\r\n");
+        if (header_end != -1) {
+            let content_length = find_content_length(data);
+            if (content_length > 0) {
+                let body_start = header_end + 4;  // After \r\n\r\n
+                let current_body_len = byte_length(data.substr(body_start, data.length - body_start));
+
+                // Keep reading until we have the complete body
+                while (current_body_len < content_length) {
+                    let more_data = stream.read(65536);
+                    if (more_data == null || more_data.length == 0) {
+                        break;
+                    }
+                    data = data + bytes_to_string(more_data);
+                    current_body_len = byte_length(data.substr(body_start, data.length - body_start));
+                }
+            }
         }
 
         // Parse HTTP request
