@@ -26,8 +26,40 @@ let CONFIG = {
     max_code_size: 102400,
     temp_dir: "/tmp/hemlock-playground",
     hemlock_path: "hemlock",
-    hemlockc_path: "hemlockc"
+    hemlockc_path: "hemlockc",
+    hemlock_version: "unknown"
 };
+
+fn get_hemlock_version() {
+    // Run hemlock --version and parse the output
+    // Expected format: "Hemlock version X.Y.Z (built ...)"
+    let result = run_capture([CONFIG["hemlock_path"], "--version"]);
+    if (result["code"] != 0) {
+        return "unknown";
+    }
+
+    let output = result["stdout"];
+    // Find "version " and extract the version number
+    let prefix = "version ";
+    let start_idx = output.find(prefix);
+    if (start_idx == -1) {
+        return "unknown";
+    }
+
+    start_idx = start_idx + prefix.length;
+    let end_idx = start_idx;
+
+    // Read until we hit a space or end of line
+    while (end_idx < output.length) {
+        let ch = output.char_at(end_idx);
+        if (ch == ' ' || ch == '\n' || ch == '\r') {
+            break;
+        }
+        end_idx = end_idx + 1;
+    }
+
+    return output.substr(start_idx, end_idx - start_idx);
+}
 
 fn load_config() {
     let port = getenv("GROVE_PORT");
@@ -42,6 +74,9 @@ fn load_config() {
     if (hemlockc != null) {
         CONFIG["hemlockc_path"] = hemlockc;
     }
+
+    // Get the actual hemlock version
+    CONFIG["hemlock_version"] = get_hemlock_version();
 }
 
 // =============================================================================
@@ -210,7 +245,7 @@ fn ensure_temp_dir() {
     }
 }
 
-fn execute_code(code) {
+fn execute_code(code, stdin_data) {
     let start_time = time_ms();
 
     // Validate code size
@@ -228,19 +263,36 @@ fn execute_code(code) {
 
     // Create temp file
     ensure_temp_dir();
-    let temp_file = `${CONFIG["temp_dir"]}/exec_${time_ms()}.hml`;
+    let ts = time_ms();
+    let temp_file = `${CONFIG["temp_dir"]}/exec_${ts}.hml`;
     write_file(temp_file, code);
 
+    // Create stdin file if stdin data is provided
+    let stdin_file = null;
+    if (stdin_data != null && stdin_data != "") {
+        stdin_file = `${CONFIG["temp_dir"]}/stdin_${ts}.txt`;
+        write_file(stdin_file, stdin_data);
+    }
+
     // Execute with sandbox using timeout command
-    // Use array form of run_capture to avoid shell injection vulnerabilities
+    // Use shell to enable stdin redirection when needed
     let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
-    let result = run_capture([
-        "timeout",
-        `${timeout_sec}`,
-        CONFIG["hemlock_path"],
-        "--sandbox",
-        temp_file
-    ]);
+    let result = null;
+
+    if (stdin_file != null) {
+        // Use shell for stdin redirection
+        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} < ${stdin_file}`;
+        result = run_capture(["sh", "-c", cmd]);
+    } else {
+        // No stdin, use array form (safer)
+        result = run_capture([
+            "timeout",
+            `${timeout_sec}`,
+            CONFIG["hemlock_path"],
+            "--sandbox",
+            temp_file
+        ]);
+    }
     let execution_time = time_ms() - start_time;
 
     // Check if timed out (exit code 124 from timeout command)
@@ -254,9 +306,12 @@ fn execute_code(code) {
         truncated = true;
     }
 
-    // Cleanup temp file
+    // Cleanup temp files
     if (exists(temp_file)) {
         remove_file(temp_file);
+    }
+    if (stdin_file != null && exists(stdin_file)) {
+        remove_file(stdin_file);
     }
 
     return {
@@ -277,14 +332,14 @@ fn execute_code(code) {
 fn handle_health() {
     return json_response(200, {
         status: "ok",
-        hemlock_version: "1.6.4"
+        hemlock_version: CONFIG["hemlock_version"]
     });
 }
 
 fn handle_version() {
     return json_response(200, {
         api_version: "1.0.0",
-        hemlock_version: "1.6.4",
+        hemlock_version: CONFIG["hemlock_version"],
         max_execution_time: CONFIG["max_execution_time_ms"] / 1000,
         max_output_size: CONFIG["max_output_size"]
     });
@@ -374,8 +429,11 @@ fn handle_execute(body) {
         });
     }
 
+    // Get optional stdin data
+    let stdin_data = data["stdin"];
+
     // Execute and return result
-    let result = execute_code(code);
+    let result = execute_code(code, stdin_data);
     return json_response(200, result);
 }
 
