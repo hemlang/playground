@@ -240,7 +240,7 @@ fn ensure_temp_dir() {
     }
 }
 
-fn execute_code(code) {
+fn execute_code(code, stdin_data) {
     let start_time = time_ms();
 
     // Validate code size
@@ -258,19 +258,36 @@ fn execute_code(code) {
 
     // Create temp file
     ensure_temp_dir();
-    let temp_file = `${CONFIG["temp_dir"]}/exec_${time_ms()}.hml`;
+    let ts = time_ms();
+    let temp_file = `${CONFIG["temp_dir"]}/exec_${ts}.hml`;
     write_file(temp_file, code);
 
+    // Create stdin file if stdin data is provided
+    let stdin_file = null;
+    if (stdin_data != null && stdin_data != "") {
+        stdin_file = `${CONFIG["temp_dir"]}/stdin_${ts}.txt`;
+        write_file(stdin_file, stdin_data);
+    }
+
     // Execute with sandbox using timeout command
-    // Use array form of run_capture to avoid shell injection vulnerabilities
+    // Use shell to enable stdin redirection when needed
     let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
-    let result = run_capture([
-        "timeout",
-        `${timeout_sec}`,
-        CONFIG["hemlock_path"],
-        "--sandbox",
-        temp_file
-    ]);
+    let result = null;
+
+    if (stdin_file != null) {
+        // Use shell for stdin redirection
+        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} < ${stdin_file}`;
+        result = run_capture(["sh", "-c", cmd]);
+    } else {
+        // No stdin, use array form (safer)
+        result = run_capture([
+            "timeout",
+            `${timeout_sec}`,
+            CONFIG["hemlock_path"],
+            "--sandbox",
+            temp_file
+        ]);
+    }
     let execution_time = time_ms() - start_time;
 
     // Check if timed out (exit code 124 from timeout command)
@@ -284,9 +301,12 @@ fn execute_code(code) {
         truncated = true;
     }
 
-    // Cleanup temp file
+    // Cleanup temp files
     if (exists(temp_file)) {
         remove_file(temp_file);
+    }
+    if (stdin_file != null && exists(stdin_file)) {
+        remove_file(stdin_file);
     }
 
     return {
@@ -402,8 +422,11 @@ fn handle_execute(body) {
         });
     }
 
+    // Get optional stdin data
+    let stdin_data = data["stdin"];
+
     // Execute and return result
-    let result = execute_code(code);
+    let result = execute_code(code, stdin_data);
     return json_response(200, result);
 }
 
