@@ -330,6 +330,76 @@
         .tok-punctuation { color: var(--text-dim); }
         .tok-constant { color: var(--accent-yellow); }
         .tok-module { color: #bb9af7; }
+
+        /* Input pane */
+        .input-section {
+            border-top: 1px solid var(--border);
+            background: var(--bg-darker);
+        }
+
+        .input-header {
+            padding: 8px 16px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .input-header:hover {
+            background: var(--bg-lighter);
+        }
+
+        .input-toggle {
+            font-size: 0.7rem;
+            transition: transform 0.2s ease;
+        }
+
+        .input-section.collapsed .input-toggle {
+            transform: rotate(-90deg);
+        }
+
+        .input-section.collapsed .input-container {
+            display: none;
+        }
+
+        .input-container {
+            padding: 8px 16px 16px;
+        }
+
+        #stdin-input {
+            width: 100%;
+            height: 80px;
+            background: var(--bg-dark);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            resize: vertical;
+            outline: none;
+        }
+
+        #stdin-input:focus {
+            border-color: var(--accent);
+        }
+
+        #stdin-input::placeholder {
+            color: var(--text-dim);
+        }
+
+        .input-hint {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
@@ -350,6 +420,7 @@
                     <button data-example="fizzbuzz">FizzBuzz</button>
                     <button data-example="async">Async/Await</button>
                     <button data-example="json">JSON Parsing</button>
+                    <button data-example="input">User Input (stdin)</button>
                 </div>
             </div>
             <button id="check-btn">✓ Check</button>
@@ -365,6 +436,16 @@
                 <div class="editor-content">
                     <pre id="highlight" aria-hidden="true"></pre>
                     <textarea id="editor" placeholder="// Write your Hemlock code here..." spellcheck="false"></textarea>
+                </div>
+            </div>
+            <div class="input-section collapsed" id="input-section">
+                <div class="input-header" id="input-header">
+                    <span>Stdin Input</span>
+                    <span class="input-toggle">▼</span>
+                </div>
+                <div class="input-container">
+                    <textarea id="stdin-input" placeholder="Enter input for read_line() calls (one line per call)..."></textarea>
+                    <div class="input-hint">Each line will be returned by a read_line() call. Empty when not needed.</div>
                 </div>
             </div>
         </div>
@@ -398,7 +479,8 @@
             builtins: new Set([
                 'print', 'print_ln', 'length', 'push', 'pop', 'shift',
                 'join', 'split', 'substr', 'char_at', 'find', 'contains',
-                'keys', 'values', 'parse', 'stringify', 'i32', 'rune'
+                'keys', 'values', 'parse', 'stringify', 'i32', 'rune',
+                'read_line', 'eprint'
             ]),
 
             // Tokenize and highlight code
@@ -661,7 +743,40 @@
                 '}',
                 '',
                 'main();'
+            ].join('\n'),
+
+            input: [
+                '// User Input with read_line()',
+                '// Expand the "Stdin Input" section below to provide input!',
+                '',
+                'fn main() {',
+                '    print("What is your name?");',
+                '    let name = read_line();',
+                '    ',
+                '    if (name == null) {',
+                '        print("No input provided!");',
+                '        return;',
+                '    }',
+                '    ',
+                '    print("Hello, " + name + "!");',
+                '    print("");',
+                '    ',
+                '    print("How old are you?");',
+                '    let age_str = read_line();',
+                '    ',
+                '    if (age_str != null) {',
+                '        let age = i32(age_str);',
+                '        print("In 10 years you will be " + (age + 10) + "!");',
+                '    }',
+                '}',
+                '',
+                'main();'
             ].join('\n')
+        };
+
+        // Default stdin for input example
+        const EXAMPLE_STDIN = {
+            input: 'Alice\n25'
         };
 
         // DOM elements
@@ -676,6 +791,9 @@
         const versionInfo = document.getElementById('version-info');
         const examplesBtn = document.getElementById('examples-btn');
         const examplesMenu = document.getElementById('examples-menu');
+        const stdinInput = document.getElementById('stdin-input');
+        const inputSection = document.getElementById('input-section');
+        const inputHeader = document.getElementById('input-header');
 
         // State
         let isRunning = false;
@@ -725,7 +843,7 @@
         // Run code
         async function runCode() {
             if (isRunning) return;
-            
+
             const code = editor.value;
             if (!code.trim()) {
                 output.innerHTML = '<span class="output-info">No code to run</span>';
@@ -738,11 +856,18 @@
             setStatus('Running...', false, true);
             output.innerHTML = '<span class="output-info">Executing...</span>';
 
+            // Build request body with optional stdin
+            const requestBody = { code };
+            const stdin = stdinInput.value;
+            if (stdin) {
+                requestBody.stdin = stdin;
+            }
+
             try {
                 const res = await fetch(`${API_URL}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ code })
+                    body: JSON.stringify(requestBody)
                 });
 
                 const data = await res.json();
@@ -830,7 +955,16 @@
                 editor.value = EXAMPLES[name];
                 updateHighlight();
                 examplesMenu.classList.remove('show');
-                output.innerHTML = '<span class="output-info">Example loaded. Press Run to execute...</span>';
+
+                // Load example stdin if available
+                if (EXAMPLE_STDIN[name]) {
+                    stdinInput.value = EXAMPLE_STDIN[name];
+                    inputSection.classList.remove('collapsed');
+                    output.innerHTML = '<span class="output-info">Example loaded with sample input. Press Run to execute...</span>';
+                } else {
+                    stdinInput.value = '';
+                    output.innerHTML = '<span class="output-info">Example loaded. Press Run to execute...</span>';
+                }
             }
         }
 
@@ -874,6 +1008,11 @@
             btn.addEventListener('click', () => {
                 loadExample(btn.dataset.example);
             });
+        });
+
+        // Input section toggle
+        inputHeader.addEventListener('click', () => {
+            inputSection.classList.toggle('collapsed');
         });
 
         // Initialize
