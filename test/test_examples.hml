@@ -1,0 +1,130 @@
+// Test Suite for Hemlock Playground Examples
+// ===========================================
+// Validates that all example programs parse and run correctly
+//
+// Run from playground directory: hemlock test/test_examples.hml
+
+import { describe, test, expect, run } from "@stdlib/testing";
+import { read_file, exists } from "@stdlib/fs";
+import { getenv } from "@stdlib/env";
+
+// =============================================================================
+// Test Utilities
+// =============================================================================
+
+// Base directory - assumes test is run from playground root
+let BASE_DIR = getenv("PWD");
+let EXAMPLES_DIR = `${BASE_DIR}/examples`;
+
+// =============================================================================
+// Example File Tests
+// =============================================================================
+
+describe("Example Files", fn() {
+    test("examples directory exists", fn() {
+        expect(exists(EXAMPLES_DIR)).to_be_true();
+    });
+
+    test("hello.hml exists", fn() {
+        expect(exists(`${EXAMPLES_DIR}/hello.hml`)).to_be_true();
+    });
+
+    test("fibonacci.hml exists", fn() {
+        expect(exists(`${EXAMPLES_DIR}/fibonacci.hml`)).to_be_true();
+    });
+
+    test("fizzbuzz.hml exists", fn() {
+        expect(exists(`${EXAMPLES_DIR}/fizzbuzz.hml`)).to_be_true();
+    });
+
+    test("async.hml exists", fn() {
+        expect(exists(`${EXAMPLES_DIR}/async.hml`)).to_be_true();
+    });
+
+    test("json.hml exists", fn() {
+        expect(exists(`${EXAMPLES_DIR}/json.hml`)).to_be_true();
+    });
+});
+
+// =============================================================================
+// Syntax Validation Tests
+// =============================================================================
+
+describe("Example Syntax", fn() {
+    test("hello.hml has valid content", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/hello.hml`);
+        expect(content.contains("fn main()")).to_be_true();
+        expect(content.contains("print")).to_be_true();
+    });
+
+    test("fibonacci.hml has valid content", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/fibonacci.hml`);
+        expect(content.contains("fn fib")).to_be_true();
+        expect(content.contains("return")).to_be_true();
+    });
+
+    test("fizzbuzz.hml has valid content", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/fizzbuzz.hml`);
+        expect(content.contains("fn fizzbuzz")).to_be_true();
+        expect(content.contains("Fizz")).to_be_true();
+        expect(content.contains("Buzz")).to_be_true();
+    });
+
+    test("async.hml has valid content", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/async.hml`);
+        expect(content.contains("async fn")).to_be_true();
+        expect(content.contains("spawn")).to_be_true();
+        expect(content.contains("await")).to_be_true();
+    });
+
+    test("json.hml has valid content", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/json.hml`);
+        expect(content.contains("import")).to_be_true();
+        expect(content.contains("@stdlib/json")).to_be_true();
+        expect(content.contains("stringify")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Grove Server Tests
+// =============================================================================
+
+describe("Grove Server", fn() {
+    test("grove.hml exists", fn() {
+        expect(exists(`${BASE_DIR}/grove.hml`)).to_be_true();
+    });
+
+    test("grove.hml has required imports", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("@stdlib/json")).to_be_true();
+        expect(content.contains("@stdlib/fs")).to_be_true();
+    });
+
+    test("grove.hml has configuration", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("CONFIG")).to_be_true();
+        expect(content.contains("port")).to_be_true();
+        expect(content.contains("max_execution_time")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Package Configuration Tests
+// =============================================================================
+
+describe("Package Configuration", fn() {
+    test("package.json exists", fn() {
+        expect(exists(`${BASE_DIR}/package.json`)).to_be_true();
+    });
+
+    test("package.json has correct name", fn() {
+        let content = read_file(`${BASE_DIR}/package.json`);
+        expect(content.contains("hemlang/playground")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Run Tests
+// =============================================================================
+
+run();

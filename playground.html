@@ -298,10 +298,10 @@
             <textarea id="editor" placeholder="// Write your Hemlock code here...
 
 fn main() {
-    print(&quot;Hello, Hemlock! 🌲&quot;)
+    print(&quot;Hello, Hemlock!&quot;);
 }
 
-main()"></textarea>
+main();"></textarea>
         </div>
         <div class="output-pane">
             <div class="pane-header">Output</div>
@@ -322,111 +322,118 @@ main()"></textarea>
     </div>
 
     <script>
-        // Configuration
-        const API_URL = 'http://localhost:8080';  // Change to your API server
+        // Configuration - auto-detect API URL from current location
+        const API_URL = window.location.origin;
 
-        // Example programs
+        // Example programs (using correct Hemlock syntax)
         const EXAMPLES = {
-            hello: `// Hello World in Hemlock
-fn main() {
-    print("Hello, World! 🌲")
-    print("Welcome to Hemlock!")
-}
+            hello: [
+                '// Hello World in Hemlock',
+                'fn main() {',
+                '    print("Hello, World!");',
+                '    print("Welcome to Hemlock!");',
+                '}',
+                '',
+                'main();'
+            ].join('\n'),
 
-main()`,
+            fibonacci: [
+                '// Fibonacci sequence',
+                'fn fib(n) {',
+                '    if (n <= 1) {',
+                '        return n;',
+                '    }',
+                '    return fib(n - 1) + fib(n - 2);',
+                '}',
+                '',
+                'fn main() {',
+                '    print("Fibonacci sequence:");',
+                '    for (let i = 0; i < 15; i = i + 1) {',
+                '        print("fib(" + i + ") = " + fib(i));',
+                '    }',
+                '}',
+                '',
+                'main();'
+            ].join('\n'),
 
-            fibonacci: `// Fibonacci sequence
-fn fib(n) {
-    if n <= 1 {
-        return n
-    }
-    return fib(n - 1) + fib(n - 2)
-}
+            fizzbuzz: [
+                '// FizzBuzz',
+                'fn fizzbuzz(n) {',
+                '    for (let i = 1; i <= n; i = i + 1) {',
+                '        if (i % 15 == 0) {',
+                '            print("FizzBuzz");',
+                '        } else if (i % 3 == 0) {',
+                '            print("Fizz");',
+                '        } else if (i % 5 == 0) {',
+                '            print("Buzz");',
+                '        } else {',
+                '            print(i);',
+                '        }',
+                '    }',
+                '}',
+                '',
+                'fn main() {',
+                '    fizzbuzz(30);',
+                '}',
+                '',
+                'main();'
+            ].join('\n'),
 
-fn main() {
-    print("Fibonacci sequence:")
-    for i in 0..15 {
-        print("fib(\${i}) = \${fib(i)}")
-    }
-}
+            async: [
+                '// Async/Await example',
+                'import { sleep } from "@stdlib/time";',
+                '',
+                'async fn fetch_data(id) {',
+                '    print("Fetching data " + id + "...");',
+                '    sleep(500);',
+                '    return "Data from " + id;',
+                '}',
+                '',
+                'async fn main() {',
+                '    let tasks = [',
+                '        spawn(fetch_data, "A"),',
+                '        spawn(fetch_data, "B"),',
+                '        spawn(fetch_data, "C")',
+                '    ];',
+                '',
+                '    for (task in tasks) {',
+                '        let result = await task;',
+                '        print("Got: " + result);',
+                '    }',
+                '',
+                '    print("All done!");',
+                '}',
+                '',
+                'main();'
+            ].join('\n'),
 
-main()`,
-
-            fizzbuzz: `// FizzBuzz
-fn fizzbuzz(n) {
-    for i in 1..=n {
-        if i % 15 == 0 {
-            print("FizzBuzz")
-        } else if i % 3 == 0 {
-            print("Fizz")
-        } else if i % 5 == 0 {
-            print("Buzz")
-        } else {
-            print(i)
-        }
-    }
-}
-
-fn main() {
-    fizzbuzz(30)
-}
-
-main()`,
-
-            async: `// Async/Await example
-import std/time
-
-async fn fetch_data(id) {
-    print("Fetching data \${id}...")
-    time.sleep(500)  // Simulate network delay
-    return "Data from \${id}"
-}
-
-async fn main() {
-    // Concurrent fetching
-    tasks = [
-        spawn fetch_data("A"),
-        spawn fetch_data("B"),
-        spawn fetch_data("C")
-    ]
-    
-    for task in tasks {
-        result = await task
-        print("Got: \${result}")
-    }
-    
-    print("All done!")
-}
-
-main()`,
-
-            json: `// JSON parsing
-import std/json
-
-fn main() {
-    data = {
-        name: "Hemlock",
-        version: "1.1.0",
-        features: ["fast", "safe", "fun"],
-        config: {
-            debug: true,
-            threads: 4
-        }
-    }
-    
-    // Serialize to JSON
-    json_str = json.stringify(data, indent: 2)
-    print("Serialized:")
-    print(json_str)
-    print("")
-    
-    // Parse back
-    parsed = json.parse(json_str)
-    print("Parsed name: \${parsed.name}")
-    print("Features: \${parsed.features}")
-}
-
-main()`
+            json: [
+                '// JSON parsing',
+                'import { parse, stringify } from "@stdlib/json";',
+                '',
+                'fn main() {',
+                '    let data = {',
+                '        name: "Hemlock",',
+                '        version: "1.6.4",',
+                '        features: ["fast", "safe", "fun"],',
+                '        config: {',
+                '            debug: true,',
+                '            threads: 4',
+                '        }',
+                '    };',
+                '',
+                '    let json_str = stringify(data);',
+                '    print("Serialized:");',
+                '    print(json_str);',
+                '    print("");',
+                '',
+                '    let parsed = parse(json_str);',
+                '    print("Parsed name: " + parsed["name"]);',
+                '    print("Features: " + parsed["features"]);',
+                '}',
+                '',
+                'main();'
+            ].join('\n')
         };
 
         // DOM elements

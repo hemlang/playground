@@ -1,0 +1,15 @@
+{
+  "name": "hemlang/playground",
+  "version": "0.1.0",
+  "description": "Browser-based IDE for Hemlock with real-time LSP features and code execution",
+  "author": "Hemlock Team",
+  "license": "MIT",
+  "main": "grove.hml",
+  "dependencies": {},
+  "devDependencies": {},
+  "scripts": {
+    "start": "hemlock grove.hml",
+    "dev": "hemlock grove.hml --verbose",
+    "test": "hemlock test/test_examples.hml"
+  }
+}

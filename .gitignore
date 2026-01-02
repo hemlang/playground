@@ -1,0 +1,25 @@
+# Hemlock package dependencies
+hem_modules/
+
+# Package lock file (optional - some prefer to commit this)
+package-lock.json
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build artifacts
+*.hmlc
+*.hmlb
