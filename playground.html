@@ -332,6 +332,7 @@
             </div>
             <button id="check-btn">
                 ✓ Check
+                <span class="keyboard-hint">Ctrl+Shift+Enter</span>
             </button>
             <button id="run-btn" class="primary">
                 ▶ Run
@@ -809,9 +810,12 @@
         editor.addEventListener('input', updateHighlight);
         editor.addEventListener('scroll', syncScroll);
 
-        // Keyboard shortcut
+        // Keyboard shortcuts
         editor.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.key === 'Enter') {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Enter') {
+                e.preventDefault();
+                checkSyntax();
+            } else if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault();
                 runCode();
             }
