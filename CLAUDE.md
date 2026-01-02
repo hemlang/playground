@@ -249,6 +249,7 @@ Grove accepts environment variables:
 | `GROVE_PORT` | 8080 | HTTP/WebSocket server port |
 | `GROVE_LSP_PORT` | 5007 | Port for hemlock LSP (TCP) |
 | `HEMLOCK_PATH` | hemlock | Path to hemlock binary |
+| `HEMLOCKC_PATH` | hemlockc | Path to hemlockc binary (for type checking) |
 
 ## Security Model
 

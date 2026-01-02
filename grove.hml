@@ -26,6 +26,7 @@ let CONFIG = {
     max_code_size: 102400,
     temp_dir: "/tmp/hemlock-playground",
     hemlock_path: "hemlock",
+    hemlockc_path: "hemlockc",
     hemlock_version: "unknown"
 };
 
@@ -68,6 +69,10 @@ fn load_config() {
     let hemlock = getenv("HEMLOCK_PATH");
     if (hemlock != null) {
         CONFIG["hemlock_path"] = hemlock;
+    }
+    let hemlockc = getenv("HEMLOCKC_PATH");
+    if (hemlockc != null) {
+        CONFIG["hemlockc_path"] = hemlockc;
     }
 
     // Get the actual hemlock version
@@ -374,25 +379,27 @@ fn handle_check(body) {
     let temp_file = `${CONFIG["temp_dir"]}/check_${time_ms()}.hml`;
     write_file(temp_file, code);
 
-    // Run hemlockc --check
-    let result = run_capture([
-        "hemlockc",
-        "--check",
-        temp_file
-    ]);
+    // Run hemlockc --check with stderr redirected to stdout
+    // Using shell mode because run_capture doesn't capture stderr in fork/exec mode
+    let cmd = `${CONFIG["hemlockc_path"]} --check '${temp_file}' 2>&1`;
+    let result = run_capture(cmd);
 
     // Cleanup temp file
     if (exists(temp_file)) {
         remove_file(temp_file);
     }
 
-    // Check result
+    // Check result - errors are in stdout due to 2>&1 redirect
     let valid = result["code"] == 0;
-    let errors = result["stderr"];
+    let errors = "";
 
-    // Clean up temp file path from error messages for cleaner output
-    if (errors != "") {
-        errors = errors.split(temp_file).join("main.hml");
+    // On failure, get error message from stdout (due to stderr redirect)
+    if (!valid) {
+        errors = result["stdout"];
+        // Clean up temp file path from error messages for cleaner output
+        if (errors != "") {
+            errors = errors.split(temp_file).join("main.hml");
+        }
     }
 
     return json_response(200, {
