@@ -1,0 +1,183 @@
+// Grove - Hemlock Playground Backend Server
+// ==========================================
+//
+// A WebSocket and HTTP server that bridges the playground frontend to:
+// 1. Hemlock LSP server (via WebSocket /lsp endpoint)
+// 2. Code execution (via HTTP POST /execute endpoint)
+//
+// Architecture:
+// ┌─────────────────────────────────────────────────────────────────┐
+// │  Browser                                                        │
+// │  ┌───────────────────────────────────────────────────────────┐  │
+// │  │  Playground (Monaco + monaco-languageclient)              │  │
+// │  └─────────────────┬────────────────────┬────────────────────┘  │
+// │                    │ WebSocket /lsp     │ HTTP POST /execute    │
+// └────────────────────┼────────────────────┼───────────────────────┘
+//                      │                    │
+//                      ▼                    ▼
+// ┌─────────────────────────────────────────────────────────────────┐
+// │  Grove Server                                                   │
+// │  ┌─────────────────────────┐    ┌─────────────────────────────┐ │
+// │  │  WebSocket → TCP Bridge │    │  HTTP API                   │ │
+// │  │  /lsp                   │    │  /execute, /health          │ │
+// │  └───────────┬─────────────┘    └──────────────┬──────────────┘ │
+// │              │ TCP                             │ subprocess     │
+// │              ▼                                 ▼                │
+// │  ┌─────────────────────────┐    ┌─────────────────────────────┐ │
+// │  │  hemlock lsp --tcp 5007 │    │  hemlock run <tempfile>     │ │
+// │  └─────────────────────────┘    └─────────────────────────────┘ │
+// └─────────────────────────────────────────────────────────────────┘
+
+import { stringify, parse } from "@stdlib/json";
+import { now, time_ms } from "@stdlib/time";
+import { read_file, write_file, exists, remove } from "@stdlib/fs";
+import { exec, wait } from "@stdlib/process";
+import { getenv } from "@stdlib/env";
+
+// =============================================================================
+// Configuration
+// =============================================================================
+
+let CONFIG = {
+    http_port: 8080,
+    lsp_port: 5007,
+    max_execution_time: 10000,  // 10 seconds in ms
+    max_output_size: 65536,     // 64KB
+    max_code_size: 102400,      // 100KB
+    temp_dir: "/tmp/hemlock-playground",
+    hemlock_path: "hemlock"     // Assumes hemlock is in PATH
+};
+
+// Override from environment
+fn load_config() {
+    let port = getenv("GROVE_PORT");
+    if (port != null) {
+        CONFIG["http_port"] = i32(port);
+    }
+
+    let lsp = getenv("GROVE_LSP_PORT");
+    if (lsp != null) {
+        CONFIG["lsp_port"] = i32(lsp);
+    }
+
+    let hemlock = getenv("HEMLOCK_PATH");
+    if (hemlock != null) {
+        CONFIG["hemlock_path"] = hemlock;
+    }
+}
+
+// =============================================================================
+// Execution Engine
+// =============================================================================
+
+fn ensure_temp_dir() {
+    if (!exists(CONFIG["temp_dir"])) {
+        exec("mkdir", ["-p", CONFIG["temp_dir"]]);
+    }
+}
+
+fn execute_code(code) {
+    let start_time = time_ms();
+
+    // Validate code size
+    if (len(code) > CONFIG["max_code_size"]) {
+        return {
+            success: false,
+            stdout: "",
+            stderr: "Error: Code exceeds maximum size limit",
+            exit_code: 1,
+            execution_time_ms: 0,
+            timed_out: false,
+            truncated: false
+        };
+    }
+
+    // Create temp file
+    ensure_temp_dir();
+    let temp_file = `${CONFIG["temp_dir"]}/exec_${time_ms()}.hml`;
+    write_file(temp_file, code);
+
+    // Execute with sandbox and timeout
+    let cmd = CONFIG["hemlock_path"];
+    let args = ["--sandbox", temp_file];
+
+    let result = exec(cmd, args);
+    let exit_code = wait(result);
+
+    let execution_time = time_ms() - start_time;
+    let timed_out = execution_time >= CONFIG["max_execution_time"];
+
+    // Read output (would need to capture from exec)
+    // TODO: Implement proper stdout/stderr capture
+    let stdout = "";
+    let stderr = "";
+    let truncated = false;
+
+    // Cleanup
+    if (exists(temp_file)) {
+        remove(temp_file);
+    }
+
+    return {
+        success: exit_code == 0,
+        stdout: stdout,
+        stderr: stderr,
+        exit_code: exit_code,
+        execution_time_ms: execution_time,
+        timed_out: timed_out,
+        truncated: truncated
+    };
+}
+
+// =============================================================================
+// HTTP Response Helpers
+// =============================================================================
+
+fn json_response(data) {
+    return stringify(data);
+}
+
+fn health_response() {
+    return json_response({
+        status: "ok",
+        hemlock_version: "1.6.4"
+    });
+}
+
+fn version_response() {
+    return json_response({
+        api_version: "1.0.0",
+        hemlock_version: "1.6.4",
+        max_execution_time: CONFIG["max_execution_time"] / 1000,
+        max_output_size: CONFIG["max_output_size"]
+    });
+}
+
+// =============================================================================
+// Main Entry Point
+// =============================================================================
+
+fn main() {
+    load_config();
+
+    print("Grove - Hemlock Playground Server");
+    print("==================================");
+    print(`HTTP Port: ${CONFIG["http_port"]}`);
+    print(`LSP Port:  ${CONFIG["lsp_port"]}`);
+    print("");
+    print("Endpoints:");
+    print("  GET  /health  - Server health check");
+    print("  GET  /version - Version and limits");
+    print("  POST /execute - Execute Hemlock code");
+    print("  WS   /lsp     - LSP WebSocket bridge");
+    print("");
+
+    // TODO: Implement HTTP server using std/net or std/http
+    // TODO: Start LSP subprocess with: hemlock lsp --tcp $LSP_PORT
+    // TODO: Bridge WebSocket connections to LSP TCP
+
+    print("Note: Full HTTP/WebSocket implementation requires libwebsockets");
+    print("For now, this is a skeleton demonstrating the architecture.");
+}
+
+main();

@@ -1,0 +1,28 @@
+// Async/Await example
+// Demonstrates Hemlock's concurrency features
+
+import { sleep } from "@stdlib/time";
+
+async fn fetch_data(id) {
+    print(`Fetching data ${id}...`);
+    sleep(500);  // Simulate network delay
+    return `Data from ${id}`;
+}
+
+async fn main() {
+    // Concurrent fetching
+    let tasks = [
+        spawn(fetch_data, "A"),
+        spawn(fetch_data, "B"),
+        spawn(fetch_data, "C")
+    ];
+
+    for (task in tasks) {
+        let result = await task;
+        print(`Got: ${result}`);
+    }
+
+    print("All done!");
+}
+
+main();

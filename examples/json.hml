@@ -1,0 +1,29 @@
+// JSON parsing
+// Demonstrates working with JSON data
+
+import { parse, stringify } from "@stdlib/json";
+
+fn main() {
+    let data = {
+        name: "Hemlock",
+        version: "1.6.4",
+        features: ["fast", "safe", "fun"],
+        config: {
+            debug: true,
+            threads: 4
+        }
+    };
+
+    // Serialize to JSON
+    let json_str = stringify(data);
+    print("Serialized:");
+    print(json_str);
+    print("");
+
+    // Parse back
+    let parsed = parse(json_str);
+    print(`Parsed name: ${parsed["name"]}`);
+    print(`Features: ${parsed["features"]}`);
+}
+
+main();
