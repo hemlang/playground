@@ -386,6 +386,7 @@
             highlight(code) {
                 let result = '';
                 let i = 0;
+                let lastKeyword = null;  // Track fn/async for function declarations
 
                 while (i < code.length) {
                     // Comments
@@ -461,15 +462,24 @@
 
                         if (this.keywords.has(word)) {
                             result += this.span('keyword', word);
+                            lastKeyword = word;
                         } else if (this.constants.has(word)) {
                             result += this.span('constant', word);
+                            lastKeyword = null;
                         } else if (this.builtins.has(word)) {
                             result += this.span('builtin', word);
+                            lastKeyword = null;
+                        } else if (lastKeyword === 'fn' || lastKeyword === 'async') {
+                            // Function declaration (name after fn/async fn)
+                            result += this.span('function', word);
+                            lastKeyword = null;
                         } else if (code[j] === '(') {
                             // Function call
                             result += this.span('function', word);
+                            lastKeyword = null;
                         } else {
                             result += this.esc(word);
+                            lastKeyword = null;
                         }
                         i = j;
                         continue;
