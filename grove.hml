@@ -12,7 +12,7 @@ import { TcpListener } from "@stdlib/net";
 import { stringify, parse } from "@stdlib/json";
 import { time_ms } from "@stdlib/time";
 import { write_file, exists, remove_file, read_file, cwd } from "@stdlib/fs";
-import { run_capture, quote } from "@stdlib/shell";
+import { run_capture } from "@stdlib/shell";
 import { getenv } from "@stdlib/env";
 
 // =============================================================================
@@ -227,10 +227,15 @@ fn execute_code(code) {
     write_file(temp_file, code);
 
     // Execute with sandbox using timeout command
+    // Use array form of run_capture to avoid shell injection vulnerabilities
     let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
-    let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${quote(temp_file)} 2>&1`;
-
-    let result = run_capture(cmd);
+    let result = run_capture([
+        "timeout",
+        `${timeout_sec}`,
+        CONFIG["hemlock_path"],
+        "--sandbox",
+        temp_file
+    ]);
     let execution_time = time_ms() - start_time;
 
     // Check if timed out (exit code 124 from timeout command)
