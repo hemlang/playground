@@ -327,106 +327,103 @@ main();"></textarea>
 
         // Example programs (using correct Hemlock syntax)
         const EXAMPLES = {
-            hello: `// Hello World in Hemlock
-fn main() {
-    print("Hello, World!");
-    print("Welcome to Hemlock!");
-}
+            hello: '// Hello World in Hemlock\n\
+fn main() {\n\
+    print("Hello, World!");\n\
+    print("Welcome to Hemlock!");\n\
+}\n\
+\n\
+main();',
 
-main();`,
+            fibonacci: '// Fibonacci sequence\n\
+fn fib(n) {\n\
+    if (n <= 1) {\n\
+        return n;\n\
+    }\n\
+    return fib(n - 1) + fib(n - 2);\n\
+}\n\
+\n\
+fn main() {\n\
+    print("Fibonacci sequence:");\n\
+    for (let i = 0; i < 15; i = i + 1) {\n\
+        print(`fib(${i}) = ${fib(i)}`);\n\
+    }\n\
+}\n\
+\n\
+main();',
 
-            fibonacci: `// Fibonacci sequence
-fn fib(n) {
-    if (n <= 1) {
-        return n;
-    }
-    return fib(n - 1) + fib(n - 2);
-}
+            fizzbuzz: '// FizzBuzz\n\
+fn fizzbuzz(n) {\n\
+    for (let i = 1; i <= n; i = i + 1) {\n\
+        if (i % 15 == 0) {\n\
+            print("FizzBuzz");\n\
+        } else if (i % 3 == 0) {\n\
+            print("Fizz");\n\
+        } else if (i % 5 == 0) {\n\
+            print("Buzz");\n\
+        } else {\n\
+            print(i);\n\
+        }\n\
+    }\n\
+}\n\
+\n\
+fn main() {\n\
+    fizzbuzz(30);\n\
+}\n\
+\n\
+main();',
 
-fn main() {
-    print("Fibonacci sequence:");
-    for (let i = 0; i < 15; i = i + 1) {
-        print(\`fib(\${i}) = \${fib(i)}\`);
-    }
-}
+            async: '// Async/Await example\n\
+import { sleep } from "@stdlib/time";\n\
+\n\
+async fn fetch_data(id) {\n\
+    print(`Fetching data ${id}...`);\n\
+    sleep(500);\n\
+    return `Data from ${id}`;\n\
+}\n\
+\n\
+async fn main() {\n\
+    let tasks = [\n\
+        spawn(fetch_data, "A"),\n\
+        spawn(fetch_data, "B"),\n\
+        spawn(fetch_data, "C")\n\
+    ];\n\
+\n\
+    for (task in tasks) {\n\
+        let result = await task;\n\
+        print(`Got: ${result}`);\n\
+    }\n\
+\n\
+    print("All done!");\n\
+}\n\
+\n\
+main();',
 
-main();`,
-
-            fizzbuzz: `// FizzBuzz
-fn fizzbuzz(n) {
-    for (let i = 1; i <= n; i = i + 1) {
-        if (i % 15 == 0) {
-            print("FizzBuzz");
-        } else if (i % 3 == 0) {
-            print("Fizz");
-        } else if (i % 5 == 0) {
-            print("Buzz");
-        } else {
-            print(i);
-        }
-    }
-}
-
-fn main() {
-    fizzbuzz(30);
-}
-
-main();`,
-
-            async: `// Async/Await example
-import { sleep } from "@stdlib/time";
-
-async fn fetch_data(id) {
-    print(\`Fetching data \${id}...\`);
-    sleep(500);  // Simulate network delay
-    return \`Data from \${id}\`;
-}
-
-async fn main() {
-    // Concurrent fetching
-    let tasks = [
-        spawn(fetch_data, "A"),
-        spawn(fetch_data, "B"),
-        spawn(fetch_data, "C")
-    ];
-
-    for (task in tasks) {
-        let result = await task;
-        print(\`Got: \${result}\`);
-    }
-
-    print("All done!");
-}
-
-main();`,
-
-            json: `// JSON parsing
-import { parse, stringify } from "@stdlib/json";
-
-fn main() {
-    let data = {
-        name: "Hemlock",
-        version: "1.6.4",
-        features: ["fast", "safe", "fun"],
-        config: {
-            debug: true,
-            threads: 4
-        }
-    };
-
-    // Serialize to JSON
-    let json_str = stringify(data);
-    print("Serialized:");
-    print(json_str);
-    print("");
-
-    // Parse back
-    let parsed = parse(json_str);
-    print(\`Parsed name: \${parsed["name"]}\`);
-    print(\`Features: \${parsed["features"]}\`);
-}
-
-main();`
+            json: '// JSON parsing\n\
+import { parse, stringify } from "@stdlib/json";\n\
+\n\
+fn main() {\n\
+    let data = {\n\
+        name: "Hemlock",\n\
+        version: "1.6.4",\n\
+        features: ["fast", "safe", "fun"],\n\
+        config: {\n\
+            debug: true,\n\
+            threads: 4\n\
+        }\n\
+    };\n\
+\n\
+    let json_str = stringify(data);\n\
+    print("Serialized:");\n\
+    print(json_str);\n\
+    print("");\n\
+\n\
+    let parsed = parse(json_str);\n\
+    print(`Parsed name: ${parsed["name"]}`);\n\
+    print(`Features: ${parsed["features"]}`);\n\
+}\n\
+\n\
+main();'
         };
 
         // DOM elements
