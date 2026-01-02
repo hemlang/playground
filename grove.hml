@@ -25,8 +25,40 @@ let CONFIG = {
     max_output_size: 65536,
     max_code_size: 102400,
     temp_dir: "/tmp/hemlock-playground",
-    hemlock_path: "hemlock"
+    hemlock_path: "hemlock",
+    hemlock_version: "unknown"
 };
+
+fn get_hemlock_version() {
+    // Run hemlock --version and parse the output
+    // Expected format: "Hemlock version X.Y.Z (built ...)"
+    let result = run_capture([CONFIG["hemlock_path"], "--version"]);
+    if (result["code"] != 0) {
+        return "unknown";
+    }
+
+    let output = result["stdout"];
+    // Find "version " and extract the version number
+    let prefix = "version ";
+    let start_idx = output.find(prefix);
+    if (start_idx == -1) {
+        return "unknown";
+    }
+
+    start_idx = start_idx + prefix.length;
+    let end_idx = start_idx;
+
+    // Read until we hit a space or end of line
+    while (end_idx < output.length) {
+        let ch = output.char_at(end_idx);
+        if (ch == ' ' || ch == '\n' || ch == '\r') {
+            break;
+        }
+        end_idx = end_idx + 1;
+    }
+
+    return output.substr(start_idx, end_idx - start_idx);
+}
 
 fn load_config() {
     let port = getenv("GROVE_PORT");
@@ -37,6 +69,9 @@ fn load_config() {
     if (hemlock != null) {
         CONFIG["hemlock_path"] = hemlock;
     }
+
+    // Get the actual hemlock version
+    CONFIG["hemlock_version"] = get_hemlock_version();
 }
 
 // =============================================================================
@@ -272,14 +307,14 @@ fn execute_code(code) {
 fn handle_health() {
     return json_response(200, {
         status: "ok",
-        hemlock_version: "1.6.4"
+        hemlock_version: CONFIG["hemlock_version"]
     });
 }
 
 fn handle_version() {
     return json_response(200, {
         api_version: "1.0.0",
-        hemlock_version: "1.6.4",
+        hemlock_version: CONFIG["hemlock_version"],
         max_execution_time: CONFIG["max_execution_time_ms"] / 1000,
         max_output_size: CONFIG["max_output_size"]
     });
