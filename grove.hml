@@ -285,6 +285,67 @@ fn handle_version() {
     });
 }
 
+fn handle_check(body) {
+    // Parse JSON body
+    let data = null;
+    try {
+        data = parse(body);
+    } catch (e) {
+        return json_response(400, {
+            valid: false,
+            errors: "Invalid JSON body"
+        });
+    }
+
+    // Get code from body
+    let code = data["code"];
+    if (code == null || code == "") {
+        return json_response(400, {
+            valid: false,
+            errors: "Missing 'code' field"
+        });
+    }
+
+    // Validate code size
+    if (code.length > CONFIG["max_code_size"]) {
+        return json_response(400, {
+            valid: false,
+            errors: "Code exceeds maximum size limit (100KB)"
+        });
+    }
+
+    // Create temp file
+    ensure_temp_dir();
+    let temp_file = `${CONFIG["temp_dir"]}/check_${time_ms()}.hml`;
+    write_file(temp_file, code);
+
+    // Run hemlockc --check
+    let result = run_capture([
+        "hemlockc",
+        "--check",
+        temp_file
+    ]);
+
+    // Cleanup temp file
+    if (exists(temp_file)) {
+        remove_file(temp_file);
+    }
+
+    // Check result
+    let valid = result["code"] == 0;
+    let errors = result["stderr"];
+
+    // Clean up temp file path from error messages for cleaner output
+    if (errors != "") {
+        errors = errors.split(temp_file).join("main.hml");
+    }
+
+    return json_response(200, {
+        valid: valid,
+        errors: errors
+    });
+}
+
 fn handle_execute(body) {
     // Parse JSON body
     let data = null;
@@ -444,6 +505,8 @@ fn handle_connection(stream) {
             response = handle_version();
         } else if (path == "/execute" && method == "POST") {
             response = handle_execute(req["body"]);
+        } else if (path == "/check" && method == "POST") {
+            response = handle_check(req["body"]);
         } else {
             response = handle_not_found(path);
         }
@@ -476,6 +539,7 @@ fn main() {
     print("Endpoints:");
     print("  GET  /health  - Health check");
     print("  GET  /version - Version info");
+    print("  POST /check   - Type check code (hemlockc)");
     print("  POST /execute - Execute code");
     print("");
     print("Press Ctrl+C to stop.");

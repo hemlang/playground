@@ -142,16 +142,17 @@ hemlock --version
 ## Implementation Phases
 
 ### Phase 1: Basic Execution ✓ (Complete)
-- [x] Grove HTTP server with `/execute`, `/health`, `/version` endpoints
+- [x] Grove HTTP server with `/execute`, `/health`, `/version`, `/check` endpoints
 - [x] Code execution with `--sandbox` and timeout protection
+- [x] Type checking via `hemlockc --check`
 - [x] CORS support for browser requests
 - [x] HTML frontend with textarea + run button
 - [x] Example programs (hello, fibonacci, fizzbuzz, async, json)
 
-### Phase 2: Monaco Editor (Next)
+### Phase 2: Syntax Highlighting ✓ (Complete)
 - [x] Basic playground.html with Tokyo Night theme
-- [ ] Replace textarea with Monaco Editor
-- [ ] Add Hemlock syntax highlighting (Monarch grammar)
+- [x] Custom lightweight syntax highlighting (textarea overlay)
+- [x] Token highlighting: keywords, strings, comments, numbers, functions, etc.
 
 ### Phase 3: LSP Integration (Future)
 - [ ] Add WebSocket `/lsp` endpoint to Grove
@@ -211,6 +212,27 @@ Grove must translate between these:
     "hemlock_version": "1.6.4",
     "max_execution_time": 10,
     "max_output_size": 65536
+}
+```
+
+### POST /check
+
+Type checks code using `hemlockc --check` without executing it.
+
+```json
+// Request
+{ "code": "let x: i32 = \"wrong\";" }
+
+// Response (error)
+{
+    "valid": false,
+    "errors": "main.hml:1: error: cannot assign 'string' to 'i32'"
+}
+
+// Response (success)
+{
+    "valid": true,
+    "errors": ""
 }
 ```
 
