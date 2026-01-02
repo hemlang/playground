@@ -280,18 +280,13 @@ fn execute_code(code, stdin_data) {
     let result = null;
 
     if (stdin_file != null) {
-        // Use shell for stdin redirection
-        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} < ${stdin_file}`;
-        result = run_capture(["sh", "-c", cmd]);
+        // Use shell for stdin redirection, with stderr redirected to stdout
+        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} < ${stdin_file} 2>&1`;
+        result = run_capture(cmd);
     } else {
-        // No stdin, use array form (safer)
-        result = run_capture([
-            "timeout",
-            `${timeout_sec}`,
-            CONFIG["hemlock_path"],
-            "--sandbox",
-            temp_file
-        ]);
+        // Use shell mode for stderr redirection (run_capture doesn't capture stderr in fork/exec mode)
+        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} 2>&1`;
+        result = run_capture(cmd);
     }
     let execution_time = time_ms() - start_time;
 
