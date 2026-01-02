@@ -684,6 +684,8 @@
 
         // State
         let isRunning = false;
+        let checkTimeout = null;
+        const CHECK_DELAY = 500;  // ms after typing stops
 
         // Syntax highlighting
         function updateHighlight() {
@@ -705,6 +707,37 @@
             highlight.scrollTop = editor.scrollTop;
             highlight.scrollLeft = editor.scrollLeft;
             lineNumbers.scrollTop = editor.scrollTop;
+        }
+
+        // Debounced auto-check
+        function scheduleAutoCheck() {
+            if (checkTimeout) {
+                clearTimeout(checkTimeout);
+            }
+            checkTimeout = setTimeout(autoCheck, CHECK_DELAY);
+        }
+
+        async function autoCheck() {
+            const code = editor.value;
+            if (!code.trim() || isRunning) return;
+
+            try {
+                const res = await fetch(`${API_URL}/check`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await res.json();
+
+                if (data.valid) {
+                    setStatus('Valid');
+                } else {
+                    setStatus('Type errors', true);
+                }
+            } catch (e) {
+                // Silently fail auto-check - don't spam errors
+            }
         }
 
         // Fetch version info on load
@@ -851,7 +884,10 @@
         checkBtn.addEventListener('click', checkSyntax);
 
         // Syntax highlighting events
-        editor.addEventListener('input', updateHighlight);
+        editor.addEventListener('input', () => {
+            updateHighlight();
+            scheduleAutoCheck();
+        });
         editor.addEventListener('scroll', syncScroll);
 
         // Keyboard shortcuts
