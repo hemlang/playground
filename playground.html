@@ -124,10 +124,16 @@
         }
 
         #editor {
-            flex: 1;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             width: 100%;
-            background: var(--bg-dark);
-            color: var(--text);
+            height: 100%;
+            background: transparent;
+            color: transparent;
+            caret-color: var(--text);
             border: none;
             padding: 16px;
             font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
@@ -136,6 +142,7 @@
             resize: none;
             outline: none;
             tab-size: 4;
+            z-index: 1;
         }
 
         #editor::placeholder {
@@ -260,6 +267,47 @@
             color: var(--text-dim);
             margin-left: 8px;
         }
+
+        /* Syntax highlighting */
+        .editor-wrapper {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+            background: var(--bg-dark);
+        }
+
+        #highlight {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 16px;
+            margin: 0;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow: auto;
+            pointer-events: none;
+            background: transparent;
+            border: none;
+            tab-size: 4;
+            color: var(--text);
+        }
+
+        /* Token colors - Tokyo Night theme */
+        .tok-keyword { color: var(--accent-purple); }
+        .tok-string { color: var(--accent-green); }
+        .tok-number { color: var(--accent-yellow); }
+        .tok-comment { color: var(--text-dim); font-style: italic; }
+        .tok-function { color: var(--accent); }
+        .tok-builtin { color: #7dcfff; }
+        .tok-operator { color: #89ddff; }
+        .tok-punctuation { color: var(--text-dim); }
+        .tok-constant { color: var(--accent-yellow); }
+        .tok-module { color: #bb9af7; }
     </style>
 </head>
 <body>
@@ -295,13 +343,10 @@
     <div class="main-container">
         <div class="editor-pane">
             <div class="pane-header">main.hml</div>
-            <textarea id="editor" placeholder="// Write your Hemlock code here...
-
-fn main() {
-    print(&quot;Hello, Hemlock!&quot;);
-}
-
-main();"></textarea>
+            <div class="editor-wrapper">
+                <pre id="highlight" aria-hidden="true"></pre>
+                <textarea id="editor" placeholder="// Write your Hemlock code here..." spellcheck="false"></textarea>
+            </div>
         </div>
         <div class="output-pane">
             <div class="pane-header">Output</div>
@@ -322,6 +367,159 @@ main();"></textarea>
     </div>
 
     <script>
+        // Hemlock Syntax Highlighter
+        const Highlighter = {
+            keywords: new Set([
+                'if', 'else', 'for', 'while', 'return', 'break', 'continue',
+                'fn', 'async', 'await', 'spawn', 'let', 'import', 'from',
+                'try', 'catch', 'in'
+            ]),
+            constants: new Set(['true', 'false', 'null']),
+            builtins: new Set([
+                'print', 'print_ln', 'length', 'push', 'pop', 'shift',
+                'join', 'split', 'substr', 'char_at', 'find', 'contains',
+                'keys', 'values', 'parse', 'stringify', 'i32', 'rune'
+            ]),
+
+            // Tokenize and highlight code
+            highlight(code) {
+                let result = '';
+                let i = 0;
+
+                while (i < code.length) {
+                    // Comments
+                    if (code[i] === '/' && code[i + 1] === '/') {
+                        let end = code.indexOf('\n', i);
+                        if (end === -1) end = code.length;
+                        result += this.span('comment', this.esc(code.slice(i, end)));
+                        i = end;
+                        continue;
+                    }
+
+                    // Strings (double-quoted)
+                    if (code[i] === '"') {
+                        let j = i + 1;
+                        while (j < code.length && code[j] !== '"') {
+                            if (code[j] === '\\') j++;
+                            j++;
+                        }
+                        result += this.span('string', this.esc(code.slice(i, j + 1)));
+                        i = j + 1;
+                        continue;
+                    }
+
+                    // Template strings (backtick)
+                    if (code[i] === '`') {
+                        let j = i + 1;
+                        let str = '`';
+                        while (j < code.length && code[j] !== '`') {
+                            if (code[j] === '$' && code[j + 1] === '{') {
+                                // Highlight up to ${
+                                result += this.span('string', this.esc(str));
+                                result += this.span('punctuation', '${');
+                                j += 2;
+                                str = '';
+                                // Find matching } (simple, no nesting)
+                                let depth = 1;
+                                let expr = '';
+                                while (j < code.length && depth > 0) {
+                                    if (code[j] === '{') depth++;
+                                    else if (code[j] === '}') depth--;
+                                    if (depth > 0) expr += code[j];
+                                    j++;
+                                }
+                                result += this.highlight(expr);
+                                result += this.span('punctuation', '}');
+                                continue;
+                            }
+                            if (code[j] === '\\') {
+                                str += code[j++];
+                            }
+                            str += code[j++];
+                        }
+                        str += '`';
+                        result += this.span('string', this.esc(str));
+                        i = j + 1;
+                        continue;
+                    }
+
+                    // Numbers
+                    if (/[0-9]/.test(code[i]) || (code[i] === '.' && /[0-9]/.test(code[i + 1]))) {
+                        let j = i;
+                        while (j < code.length && /[0-9.eE\-]/.test(code[j])) j++;
+                        result += this.span('number', code.slice(i, j));
+                        i = j;
+                        continue;
+                    }
+
+                    // Identifiers and keywords
+                    if (/[a-zA-Z_]/.test(code[i])) {
+                        let j = i;
+                        while (j < code.length && /[a-zA-Z0-9_]/.test(code[j])) j++;
+                        const word = code.slice(i, j);
+
+                        if (this.keywords.has(word)) {
+                            result += this.span('keyword', word);
+                        } else if (this.constants.has(word)) {
+                            result += this.span('constant', word);
+                        } else if (this.builtins.has(word)) {
+                            result += this.span('builtin', word);
+                        } else if (code[j] === '(') {
+                            // Function call
+                            result += this.span('function', word);
+                        } else {
+                            result += this.esc(word);
+                        }
+                        i = j;
+                        continue;
+                    }
+
+                    // Module paths @stdlib/...
+                    if (code[i] === '@') {
+                        let j = i;
+                        while (j < code.length && /[a-zA-Z0-9_\/@]/.test(code[j])) j++;
+                        result += this.span('module', this.esc(code.slice(i, j)));
+                        i = j;
+                        continue;
+                    }
+
+                    // Operators
+                    if ('+-*/%=<>!&|'.includes(code[i])) {
+                        let op = code[i];
+                        if (code[i + 1] && '=&|'.includes(code[i + 1])) {
+                            op += code[++i];
+                        }
+                        result += this.span('operator', this.esc(op));
+                        i++;
+                        continue;
+                    }
+
+                    // Punctuation
+                    if ('(){}[];:,.'.includes(code[i])) {
+                        result += this.span('punctuation', this.esc(code[i]));
+                        i++;
+                        continue;
+                    }
+
+                    // Whitespace and other
+                    result += this.esc(code[i]);
+                    i++;
+                }
+
+                return result;
+            },
+
+            span(type, content) {
+                return `<span class="tok-${type}">${content}</span>`;
+            },
+
+            esc(str) {
+                return str.replace(/&/g, '&amp;')
+                          .replace(/</g, '&lt;')
+                          .replace(/>/g, '&gt;');
+            }
+        };
+
         // Configuration - auto-detect API URL from current location
         const API_URL = window.location.origin;
 
@@ -438,6 +636,7 @@ main();"></textarea>
 
         // DOM elements
         const editor = document.getElementById('editor');
+        const highlight = document.getElementById('highlight');
         const output = document.getElementById('output');
         const runBtn = document.getElementById('run-btn');
         const checkBtn = document.getElementById('check-btn');
@@ -449,6 +648,19 @@ main();"></textarea>
 
         // State
         let isRunning = false;
+
+        // Syntax highlighting
+        function updateHighlight() {
+            // Add trailing newline to prevent scrolling issues
+            const code = editor.value + '\n';
+            highlight.innerHTML = Highlighter.highlight(code);
+        }
+
+        // Sync scroll between editor and highlight
+        function syncScroll() {
+            highlight.scrollTop = editor.scrollTop;
+            highlight.scrollLeft = editor.scrollLeft;
+        }
 
         // Fetch version info on load
         async function fetchVersion() {
@@ -576,6 +788,7 @@ main();"></textarea>
         function loadExample(name) {
             if (EXAMPLES[name]) {
                 editor.value = EXAMPLES[name];
+                updateHighlight();
                 examplesMenu.classList.remove('show');
                 output.innerHTML = '<span class="output-info">Example loaded. Press Run to execute...</span>';
             }
@@ -591,6 +804,10 @@ main();"></textarea>
         // Event listeners
         runBtn.addEventListener('click', runCode);
         checkBtn.addEventListener('click', checkSyntax);
+
+        // Syntax highlighting events
+        editor.addEventListener('input', updateHighlight);
+        editor.addEventListener('scroll', syncScroll);
 
         // Keyboard shortcut
         editor.addEventListener('keydown', (e) => {
@@ -626,6 +843,7 @@ main();"></textarea>
 
         // Initialize
         fetchVersion();
+        updateHighlight();
     </script>
 </body>
 </html>
