@@ -274,6 +274,27 @@
             flex: 1;
             overflow: hidden;
             background: var(--bg-dark);
+            display: flex;
+        }
+
+        #line-numbers {
+            padding: 16px 8px 16px 16px;
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-dim);
+            text-align: right;
+            user-select: none;
+            background: var(--bg-darker);
+            border-right: 1px solid var(--border);
+            overflow: hidden;
+            min-width: 40px;
+        }
+
+        .editor-content {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
         }
 
         #highlight {
@@ -345,8 +366,11 @@
         <div class="editor-pane">
             <div class="pane-header">main.hml</div>
             <div class="editor-wrapper">
-                <pre id="highlight" aria-hidden="true"></pre>
-                <textarea id="editor" placeholder="// Write your Hemlock code here..." spellcheck="false"></textarea>
+                <div id="line-numbers">1</div>
+                <div class="editor-content">
+                    <pre id="highlight" aria-hidden="true"></pre>
+                    <textarea id="editor" placeholder="// Write your Hemlock code here..." spellcheck="false"></textarea>
+                </div>
             </div>
         </div>
         <div class="output-pane">
@@ -648,6 +672,7 @@
         // DOM elements
         const editor = document.getElementById('editor');
         const highlight = document.getElementById('highlight');
+        const lineNumbers = document.getElementById('line-numbers');
         const output = document.getElementById('output');
         const runBtn = document.getElementById('run-btn');
         const checkBtn = document.getElementById('check-btn');
@@ -665,12 +690,21 @@
             // Add trailing newline to prevent scrolling issues
             const code = editor.value + '\n';
             highlight.innerHTML = Highlighter.highlight(code);
+
+            // Update line numbers
+            const lineCount = code.split('\n').length;
+            const lines = [];
+            for (let i = 1; i <= lineCount; i++) {
+                lines.push(i);
+            }
+            lineNumbers.innerHTML = lines.join('\n');
         }
 
         // Sync scroll between editor and highlight
         function syncScroll() {
             highlight.scrollTop = editor.scrollTop;
             highlight.scrollLeft = editor.scrollLeft;
+            lineNumbers.scrollTop = editor.scrollTop;
         }
 
         // Fetch version info on load
