@@ -322,8 +322,8 @@ main()"></textarea>
     </div>
 
     <script>
-        // Configuration
-        const API_URL = 'http://localhost:8080';  // Change to your API server
+        // Configuration - auto-detect API URL from current location
+        const API_URL = window.location.origin;
 
         // Example programs
         const EXAMPLES = {

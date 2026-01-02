@@ -11,7 +11,7 @@
 import { TcpListener } from "@stdlib/net";
 import { stringify, parse } from "@stdlib/json";
 import { time_ms } from "@stdlib/time";
-import { write_file, exists, remove_file } from "@stdlib/fs";
+import { write_file, exists, remove_file, read_file, cwd } from "@stdlib/fs";
 import { run_capture, quote } from "@stdlib/shell";
 import { getenv } from "@stdlib/env";
 
@@ -293,6 +293,19 @@ fn handle_options() {
     return build_response(204, "No Content", "text/plain", "");
 }
 
+fn handle_index() {
+    // Serve playground.html from current directory
+    let html_path = `${cwd()}/playground.html`;
+    if (!exists(html_path)) {
+        return json_response(404, {
+            error: "playground.html not found",
+            path: html_path
+        });
+    }
+    let content = read_file(html_path);
+    return build_response(200, "OK", "text/html; charset=utf-8", content);
+}
+
 fn handle_not_found(path) {
     return json_response(404, {
         error: "Not found",
@@ -342,6 +355,8 @@ fn handle_connection(stream) {
 
         if (method == "OPTIONS") {
             response = handle_options();
+        } else if ((path == "/" || path == "/index.html") && method == "GET") {
+            response = handle_index();
         } else if (path == "/health" && method == "GET") {
             response = handle_health();
         } else if (path == "/version" && method == "GET") {
