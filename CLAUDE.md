@@ -250,17 +250,54 @@ Grove accepts environment variables:
 | `GROVE_LSP_PORT` | 5007 | Port for hemlock LSP (TCP) |
 | `HEMLOCK_PATH` | hemlock | Path to hemlock binary |
 | `HEMLOCKC_PATH` | hemlockc | Path to hemlockc binary (for type checking) |
+| `GROVE_SECURE_MODE` | false | Enable bubblewrap sandboxing |
+| `GROVE_BWRAP_PATH` | bwrap | Path to bubblewrap binary |
+| `GROVE_SANDBOX_MEMORY_MB` | 256 | Memory limit per execution (MB) |
+| `GROVE_SANDBOX_PIDS_MAX` | 50 | Max processes per execution |
+| `GROVE_RATE_LIMIT` | 60 | Max requests per minute per IP |
+| `GROVE_CORS_ORIGIN` | * | CORS allowed origin |
 
 ## Security Model
 
-Grove runs on an **isolated VLAN** - network isolation is the primary sandbox.
+Grove supports two security modes:
 
-Built-in protections:
-- `--sandbox` flag restricts dangerous operations
-- Execution timeout (kill after N seconds)
+### Basic Mode (default)
+- `--sandbox` flag restricts dangerous hemlock operations
+- Execution timeout (kill after 10 seconds)
 - Output truncation (max 64KB)
 - Code size limits (max 100KB)
+- Rate limiting (60 requests/minute per IP)
 - Temp file cleanup after each execution
+
+### Secure Mode (recommended for production)
+Enable with `GROVE_SECURE_MODE=1`. Requires [bubblewrap](https://github.com/containers/bubblewrap).
+
+Additional protections:
+- **User namespace isolation** - runs as nobody (uid 65534)
+- **Network isolation** - no network access from sandbox
+- **Filesystem isolation** - read-only system, private /tmp
+- **PID namespace** - isolated process tree
+- **IPC isolation** - separate IPC namespace
+- **Resource limits** - memory and process count limits via ulimit
+- **Minimal environment** - cleared env vars
+
+```bash
+# Check system readiness
+./setup-sandbox.sh
+
+# Run with secure mode
+GROVE_SECURE_MODE=1 hemlock grove.hml
+```
+
+### Setup Script
+
+Run `./setup-sandbox.sh` to check your system's security configuration:
+- Verifies bubblewrap installation
+- Checks kernel namespace support
+- Validates seccomp and cgroups
+- Suggests fixes for issues found
+
+Use `./setup-sandbox.sh --fix` to automatically fix common issues (requires root)
 
 ## Quick Start
 
