@@ -31,7 +31,13 @@ let CONFIG = {
     hemlock_version: "unknown",
     cors_origin: "*",  // Configurable CORS origin
     rate_limit_requests: 60,  // Max requests per window
-    rate_limit_window_ms: 60000  // 1 minute window
+    rate_limit_window_ms: 60000,  // 1 minute window
+    // Security settings
+    secure_mode: false,  // Enable bubblewrap sandboxing
+    bwrap_path: "bwrap",  // Path to bubblewrap binary
+    bwrap_available: false,  // Detected at startup
+    sandbox_memory_mb: 256,  // Memory limit for sandboxed processes
+    sandbox_pids_max: 50  // Max processes in sandbox
 };
 
 // =============================================================================
@@ -165,6 +171,28 @@ fn get_hemlock_version() {
     return output.substr(start_idx, end_idx - start_idx);
 }
 
+fn check_bwrap_available() {
+    // Check if bubblewrap is installed and functional
+    let result = run_capture([CONFIG["bwrap_path"], "--version"]);
+    return result["code"] == 0;
+}
+
+fn check_user_namespaces() {
+    // Check if unprivileged user namespaces are enabled
+    let result = run_capture(["cat", "/proc/sys/kernel/unprivileged_userns_clone"]);
+    if (result["code"] == 0) {
+        let value = trim(result["stdout"]);
+        return value == "1";
+    }
+    // If file doesn't exist, namespaces might still work (depends on kernel config)
+    // Try a simple bwrap command to verify
+    if (CONFIG["bwrap_available"]) {
+        let test = run_capture([CONFIG["bwrap_path"], "--unshare-user", "--uid", "65534", "--gid", "65534", "/bin/true"]);
+        return test["code"] == 0;
+    }
+    return false;
+}
+
 fn load_config() {
     let port = getenv("GROVE_PORT");
     if (port != null) {
@@ -189,6 +217,37 @@ fn load_config() {
     let rate_limit = getenv("GROVE_RATE_LIMIT");
     if (rate_limit != null) {
         CONFIG["rate_limit_requests"] = i32(rate_limit);
+    }
+
+    // Bubblewrap path
+    let bwrap = getenv("GROVE_BWRAP_PATH");
+    if (bwrap != null) {
+        CONFIG["bwrap_path"] = bwrap;
+    }
+
+    // Check bubblewrap availability
+    CONFIG["bwrap_available"] = check_bwrap_available();
+
+    // Secure mode - enable bubblewrap sandboxing
+    let secure = getenv("GROVE_SECURE_MODE");
+    if (secure != null && (secure == "1" || to_lower(secure) == "true")) {
+        if (CONFIG["bwrap_available"]) {
+            CONFIG["secure_mode"] = true;
+        } else {
+            print("WARNING: GROVE_SECURE_MODE requested but bubblewrap not found");
+            print("         Install bubblewrap: apt install bubblewrap");
+            print("         Falling back to basic sandbox mode");
+        }
+    }
+
+    // Sandbox resource limits
+    let mem = getenv("GROVE_SANDBOX_MEMORY_MB");
+    if (mem != null) {
+        CONFIG["sandbox_memory_mb"] = i32(mem);
+    }
+    let pids = getenv("GROVE_SANDBOX_PIDS_MAX");
+    if (pids != null) {
+        CONFIG["sandbox_pids_max"] = i32(pids);
     }
 
     // Get the actual hemlock version
@@ -390,6 +449,72 @@ fn ensure_temp_dir() {
     }
 }
 
+fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
+    // Build bubblewrap command for secure sandboxing
+    // This provides:
+    // - User namespace isolation (run as nobody)
+    // - Network isolation (no network access)
+    // - Filesystem isolation (minimal read-only mounts)
+    // - Process isolation (new PID namespace)
+    // - IPC isolation (new IPC namespace)
+
+    let mem_bytes = CONFIG["sandbox_memory_mb"] * 1024 * 1024;
+
+    // Build the inner command that bwrap will execute
+    let inner_cmd = "";
+    if (stdin_file != null) {
+        inner_cmd = `"${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}"`;
+    } else {
+        inner_cmd = `"${CONFIG["hemlock_path"]}" --sandbox "${temp_file}"`;
+    }
+
+    // Construct bwrap command
+    // Note: Using sh -c to set ulimits inside the sandbox
+    let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
+        // Namespace isolation
+        `--unshare-user ` +
+        `--unshare-pid ` +
+        `--unshare-net ` +
+        `--unshare-ipc ` +
+        `--unshare-uts ` +
+        `--unshare-cgroup ` +
+        // Run as nobody (uid/gid 65534)
+        `--uid 65534 ` +
+        `--gid 65534 ` +
+        // Die when parent dies
+        `--die-with-parent ` +
+        // New session (detach from terminal)
+        `--new-session ` +
+        // Minimal filesystem - read-only system directories
+        `--ro-bind /usr /usr ` +
+        `--ro-bind /lib /lib ` +
+        `--ro-bind-try /lib64 /lib64 ` +
+        `--ro-bind /bin /bin ` +
+        `--ro-bind-try /sbin /sbin ` +
+        // Hemlock binary location (if not in standard path)
+        `--ro-bind-try /usr/local /usr/local ` +
+        // Temp directory for code execution (read-only bind the specific files)
+        `--ro-bind "${temp_file}" "${temp_file}" ` +
+        // Bind stdin file if present
+        (stdin_file != null ? `--ro-bind "${stdin_file}" "${stdin_file}" ` : "") +
+        // Writable tmpfs for any temp files hemlock might need
+        `--tmpfs /tmp ` +
+        // Minimal /dev
+        `--dev /dev ` +
+        // Proc filesystem (needed for some operations)
+        `--proc /proc ` +
+        // Set hostname to something neutral
+        `--hostname sandbox ` +
+        // Clear environment except essentials
+        `--clearenv ` +
+        `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
+        `--setenv HOME /tmp ` +
+        // The command to run inside sandbox with resource limits
+        `-- sh -c "ulimit -v ${mem_bytes} && ulimit -u ${CONFIG["sandbox_pids_max"]} && ${inner_cmd}"`;
+
+    return bwrap_cmd;
+}
+
 fn execute_code(code, stdin_data) {
     let start_time = time_ms();
 
@@ -424,20 +549,26 @@ fn execute_code(code, stdin_data) {
     let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
     let result = null;
 
-    if (stdin_file != null) {
-        // Use array-based execution with stdin file via --stdin flag if available
-        // For now, use shell for stdin redirection (paths are server-controlled, safe)
+    if (CONFIG["secure_mode"]) {
+        // Secure mode: use bubblewrap for OS-level isolation
+        let bwrap_cmd = build_bwrap_command(temp_file, stdin_file, timeout_sec);
         result = run_capture([
             "sh", "-c",
-            `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`
+            `timeout ${timeout_sec} ${bwrap_cmd} 2>&1`
         ]);
     } else {
-        // Use shell mode for stderr redirection (run_capture doesn't capture stderr in array mode)
-        // Paths are server-controlled and quoted, so this is safe
-        result = run_capture([
-            "sh", "-c",
-            `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" 2>&1`
-        ]);
+        // Basic mode: just use hemlock --sandbox with timeout
+        if (stdin_file != null) {
+            result = run_capture([
+                "sh", "-c",
+                `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`
+            ]);
+        } else {
+            result = run_capture([
+                "sh", "-c",
+                `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" 2>&1`
+            ]);
+        }
     }
     let execution_time = time_ms() - start_time;
 
@@ -494,7 +625,10 @@ fn handle_version() {
         api_version: "1.0.0",
         hemlock_version: CONFIG["hemlock_version"],
         max_execution_time: CONFIG["max_execution_time_ms"] / 1000,
-        max_output_size: CONFIG["max_output_size"]
+        max_output_size: CONFIG["max_output_size"],
+        secure_mode: CONFIG["secure_mode"],
+        sandbox_memory_mb: CONFIG["sandbox_memory_mb"],
+        sandbox_pids_max: CONFIG["sandbox_pids_max"]
     });
 }
 
@@ -794,6 +928,22 @@ fn main() {
     print("Grove - Hemlock Playground Server");
     print("==================================");
     print(`Listening on http://0.0.0.0:${CONFIG["port"]}`);
+    print("");
+
+    // Display security status
+    print("Security:");
+    if (CONFIG["secure_mode"]) {
+        print("  Mode: SECURE (bubblewrap isolation)");
+        print(`  Memory limit: ${CONFIG["sandbox_memory_mb"]}MB`);
+        print(`  Process limit: ${CONFIG["sandbox_pids_max"]}`);
+    } else {
+        print("  Mode: BASIC (hemlock --sandbox only)");
+        if (CONFIG["bwrap_available"]) {
+            print("  Note: bubblewrap available, set GROVE_SECURE_MODE=1 to enable");
+        } else {
+            print("  Note: bubblewrap not found, install for enhanced security");
+        }
+    }
     print("");
     print("Endpoints:");
     print("  GET  /health  - Health check");
