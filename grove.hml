@@ -24,11 +24,115 @@ let CONFIG = {
     max_execution_time_ms: 10000,
     max_output_size: 65536,
     max_code_size: 102400,
+    max_request_body_size: 131072,  // 128KB max request body
     temp_dir: "/tmp/hemlock-playground",
     hemlock_path: "hemlock",
     hemlockc_path: "hemlockc",
-    hemlock_version: "unknown"
+    hemlock_version: "unknown",
+    cors_origin: "*",  // Configurable CORS origin
+    rate_limit_requests: 60,  // Max requests per window
+    rate_limit_window_ms: 60000  // 1 minute window
 };
+
+// =============================================================================
+// Rate Limiting
+// =============================================================================
+
+// Simple in-memory rate limiter (per-IP tracking)
+let rate_limit_store = {};
+
+fn get_client_ip(req) {
+    // Check X-Forwarded-For header first (for proxied requests)
+    let forwarded = req["headers"]["x-forwarded-for"];
+    if (forwarded != null && forwarded != "") {
+        // Take the first IP in the list
+        let comma_idx = forwarded.find(",");
+        if (comma_idx != -1) {
+            return trim(forwarded.substr(0, comma_idx));
+        }
+        return trim(forwarded);
+    }
+    // Fall back to direct connection (not available in current API, use placeholder)
+    return "unknown";
+}
+
+fn check_rate_limit(client_ip) {
+    let now = time_ms();
+    let window_start = now - CONFIG["rate_limit_window_ms"];
+
+    // Get or create entry for this IP
+    let entry = rate_limit_store[client_ip];
+    if (entry == null) {
+        rate_limit_store[client_ip] = {
+            requests: [now],
+            blocked_until: 0
+        };
+        return true;
+    }
+
+    // Check if currently blocked
+    if (entry["blocked_until"] > now) {
+        return false;
+    }
+
+    // Filter out old requests outside the window
+    let recent_requests = [];
+    let requests = entry["requests"];
+    for (let i = 0; i < requests.length; i = i + 1) {
+        if (requests[i] > window_start) {
+            recent_requests.push(requests[i]);
+        }
+    }
+
+    // Check if over limit
+    if (recent_requests.length >= CONFIG["rate_limit_requests"]) {
+        // Block for the remainder of the window
+        entry["blocked_until"] = now + CONFIG["rate_limit_window_ms"];
+        entry["requests"] = recent_requests;
+        return false;
+    }
+
+    // Add current request
+    recent_requests.push(now);
+    entry["requests"] = recent_requests;
+    return true;
+}
+
+fn rate_limit_response() {
+    return json_response(429, {
+        error: "Too many requests",
+        retry_after_seconds: CONFIG["rate_limit_window_ms"] / 1000
+    });
+}
+
+// Periodically clean up old entries (call occasionally)
+fn cleanup_rate_limit_store() {
+    let now = time_ms();
+    let window_start = now - CONFIG["rate_limit_window_ms"];
+    let keys_to_remove = [];
+
+    for (key in rate_limit_store) {
+        let entry = rate_limit_store[key];
+        // Remove entries with no recent requests and not blocked
+        if (entry["blocked_until"] < now) {
+            let has_recent = false;
+            let requests = entry["requests"];
+            for (let i = 0; i < requests.length; i = i + 1) {
+                if (requests[i] > window_start) {
+                    has_recent = true;
+                    break;
+                }
+            }
+            if (!has_recent) {
+                keys_to_remove.push(key);
+            }
+        }
+    }
+
+    for (let i = 0; i < keys_to_remove.length; i = i + 1) {
+        rate_limit_store[keys_to_remove[i]] = null;
+    }
+}
 
 fn get_hemlock_version() {
     // Run hemlock --version and parse the output
@@ -75,6 +179,18 @@ fn load_config() {
         CONFIG["hemlockc_path"] = hemlockc;
     }
 
+    // Configurable CORS origin (default: "*")
+    let cors = getenv("GROVE_CORS_ORIGIN");
+    if (cors != null) {
+        CONFIG["cors_origin"] = cors;
+    }
+
+    // Configurable rate limiting
+    let rate_limit = getenv("GROVE_RATE_LIMIT");
+    if (rate_limit != null) {
+        CONFIG["rate_limit_requests"] = i32(rate_limit);
+    }
+
     // Get the actual hemlock version
     CONFIG["hemlock_version"] = get_hemlock_version();
 }
@@ -82,6 +198,33 @@ fn load_config() {
 // =============================================================================
 // String Utilities
 // =============================================================================
+
+// Simple pseudo-random number generator (LCG)
+let _rand_seed = 0;
+
+fn init_random() {
+    // Initialize seed from current time
+    _rand_seed = time_ms();
+}
+
+fn random_int() {
+    // Linear congruential generator
+    _rand_seed = (_rand_seed * 1103515245 + 12345) % 2147483648;
+    if (_rand_seed < 0) {
+        _rand_seed = -_rand_seed;
+    }
+    return _rand_seed;
+}
+
+fn random_suffix(length) {
+    let chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i = i + 1) {
+        let idx = random_int() % chars.length;
+        result = result + chars.char_at(idx);
+    }
+    return result;
+}
 
 fn trim(s) {
     let start = 0;
@@ -213,7 +356,7 @@ fn build_response(status, status_text, content_type, body) {
     let response = `HTTP/1.1 ${status} ${status_text}\r\n`;
     response = response + `Content-Type: ${content_type}\r\n`;
     response = response + `Content-Length: ${byte_length(body)}\r\n`;
-    response = response + "Access-Control-Allow-Origin: *\r\n";
+    response = response + `Access-Control-Allow-Origin: ${CONFIG["cors_origin"]}\r\n`;
     response = response + "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n";
     response = response + "Access-Control-Allow-Headers: Content-Type\r\n";
     response = response + "Connection: close\r\n";
@@ -227,6 +370,8 @@ fn json_response(status, data) {
     let status_text = "OK";
     if (status == 400) { status_text = "Bad Request"; }
     if (status == 404) { status_text = "Not Found"; }
+    if (status == 413) { status_text = "Payload Too Large"; }
+    if (status == 429) { status_text = "Too Many Requests"; }
     if (status == 500) { status_text = "Internal Server Error"; }
     return build_response(status, status_text, "application/json", body);
 }
@@ -261,32 +406,37 @@ fn execute_code(code, stdin_data) {
         };
     }
 
-    // Create temp file
+    // Create temp file with random suffix to prevent predictable filenames
     ensure_temp_dir();
     let ts = time_ms();
-    let temp_file = `${CONFIG["temp_dir"]}/exec_${ts}.hml`;
+    let rand = random_suffix(12);
+    let temp_file = `${CONFIG["temp_dir"]}/exec_${ts}_${rand}.hml`;
     write_file(temp_file, code);
 
     // Create stdin file if stdin data is provided
     let stdin_file = null;
     if (stdin_data != null && stdin_data != "") {
-        stdin_file = `${CONFIG["temp_dir"]}/stdin_${ts}.txt`;
+        stdin_file = `${CONFIG["temp_dir"]}/stdin_${ts}_${rand}.txt`;
         write_file(stdin_file, stdin_data);
     }
 
     // Execute with sandbox using timeout command
-    // Use shell to enable stdin redirection when needed
     let timeout_sec = CONFIG["max_execution_time_ms"] / 1000;
     let result = null;
 
     if (stdin_file != null) {
-        // Use shell for stdin redirection, with stderr redirected to stdout
-        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} < ${stdin_file} 2>&1`;
-        result = run_capture(cmd);
+        // Use array-based execution with stdin file via --stdin flag if available
+        // For now, use shell for stdin redirection (paths are server-controlled, safe)
+        result = run_capture([
+            "sh", "-c",
+            `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`
+        ]);
     } else {
-        // Use shell mode for stderr redirection (run_capture doesn't capture stderr in fork/exec mode)
-        let cmd = `timeout ${timeout_sec} ${CONFIG["hemlock_path"]} --sandbox ${temp_file} 2>&1`;
-        result = run_capture(cmd);
+        // Use array-based command execution (safer than shell string interpolation)
+        result = run_capture([
+            "timeout", `${timeout_sec}`,
+            CONFIG["hemlock_path"], "--sandbox", temp_file
+        ]);
     }
     let execution_time = time_ms() - start_time;
 
@@ -295,7 +445,14 @@ fn execute_code(code, stdin_data) {
 
     // Truncate output if too large
     let stdout = result["stdout"];
+    let stderr = result["stderr"];
     let truncated = false;
+
+    // Combine stdout and stderr for consistent output
+    if (stderr != "" && stderr != null) {
+        stdout = stdout + stderr;
+    }
+
     if (stdout.length > CONFIG["max_output_size"]) {
         stdout = stdout.substr(0, CONFIG["max_output_size"]);
         truncated = true;
@@ -312,7 +469,7 @@ fn execute_code(code, stdin_data) {
     return {
         success: result["code"] == 0,
         stdout: stdout,
-        stderr: result["stderr"],
+        stderr: "",
         exit_code: result["code"],
         execution_time_ms: execution_time,
         timed_out: timed_out,
@@ -369,30 +526,35 @@ fn handle_check(body) {
         });
     }
 
-    // Create temp file
+    // Create temp file with random suffix to prevent predictable filenames
     ensure_temp_dir();
-    let temp_file = `${CONFIG["temp_dir"]}/check_${time_ms()}.hml`;
+    let ts = time_ms();
+    let rand = random_suffix(12);
+    let temp_file = `${CONFIG["temp_dir"]}/check_${ts}_${rand}.hml`;
     write_file(temp_file, code);
 
-    // Run hemlockc --check with stderr redirected to stdout
-    // Using shell mode because run_capture doesn't capture stderr in fork/exec mode
-    let cmd = `${CONFIG["hemlockc_path"]} --check '${temp_file}' 2>&1`;
-    let result = run_capture(cmd);
+    // Run hemlockc --check using array-based execution (safer)
+    let result = run_capture([
+        CONFIG["hemlockc_path"], "--check", temp_file
+    ]);
 
     // Cleanup temp file
     if (exists(temp_file)) {
         remove_file(temp_file);
     }
 
-    // Check result - errors are in stdout due to 2>&1 redirect
+    // Check result
     let valid = result["code"] == 0;
     let errors = "";
 
-    // On failure, get error message from stdout (due to stderr redirect)
+    // On failure, get error message from stdout or stderr
     if (!valid) {
         errors = result["stdout"];
+        if ((errors == "" || errors == null) && result["stderr"] != null) {
+            errors = result["stderr"];
+        }
         // Clean up temp file path from error messages for cleaner output
-        if (errors != "") {
+        if (errors != "" && errors != null) {
             errors = errors.split(temp_file).join("main.hml");
         }
     }
@@ -503,6 +665,9 @@ fn find_content_length(data) {
     return i32(value_str);
 }
 
+// Counter for periodic cleanup
+let _request_count = 0;
+
 fn handle_connection(stream) {
     try {
         // Read initial data
@@ -524,6 +689,18 @@ fn handle_connection(stream) {
         let header_end = data.find("\r\n\r\n");
         if (header_end != -1) {
             let content_length = find_content_length(data);
+
+            // Validate request body size before reading more data
+            if (content_length > CONFIG["max_request_body_size"]) {
+                let response = json_response(413, {
+                    error: "Request body too large",
+                    max_size: CONFIG["max_request_body_size"]
+                });
+                stream.write(response);
+                stream.close();
+                return;
+            }
+
             if (content_length > 0) {
                 let body_start = header_end + 4;  // After \r\n\r\n
                 let current_body_len = byte_length(data.substr(body_start, data.length - body_start));
@@ -547,13 +724,31 @@ fn handle_connection(stream) {
             return;
         }
 
+        // Apply rate limiting (skip for health checks)
+        let path = req["path"];
+        if (path != "/health") {
+            let client_ip = get_client_ip(req);
+            if (!check_rate_limit(client_ip)) {
+                let response = rate_limit_response();
+                stream.write(response);
+                stream.close();
+                return;
+            }
+        }
+
+        // Periodic cleanup of rate limit store (every 100 requests)
+        _request_count = _request_count + 1;
+        if (_request_count >= 100) {
+            cleanup_rate_limit_store();
+            _request_count = 0;
+        }
+
         // Log request
-        print(`${req["method"]} ${req["path"]}`);
+        print(`${req["method"]} ${path}`);
 
         // Route request
         let response = "";
         let method = req["method"];
-        let path = req["path"];
 
         if (method == "OPTIONS") {
             response = handle_options();
@@ -591,6 +786,7 @@ fn handle_connection(stream) {
 
 fn main() {
     load_config();
+    init_random();
 
     print("Grove - Hemlock Playground Server");
     print("==================================");
