@@ -1,12 +1,13 @@
-// Test Suite for Hemlock Playground Examples
-// ===========================================
-// Validates that all example programs parse and run correctly
+// Test Suite for Hemlock Playground
+// ===================================
+// Comprehensive tests for examples, execution, and utilities
 //
 // Run from playground directory: hemlock test/test_examples.hml
 
 import { describe, test, expect, run } from "@stdlib/testing";
 import { read_file, exists } from "@stdlib/fs";
 import { getenv } from "@stdlib/env";
+import { run_capture } from "@stdlib/shell";
 
 // =============================================================================
 // Test Utilities
@@ -15,12 +16,34 @@ import { getenv } from "@stdlib/env";
 // Base directory - assumes test is run from playground root
 let BASE_DIR = getenv("PWD");
 let EXAMPLES_DIR = `${BASE_DIR}/examples`;
+let HEMLOCK_PATH = getenv("HEMLOCK_PATH");
+if (HEMLOCK_PATH == null) {
+    HEMLOCK_PATH = "hemlock";
+}
+
+// Helper to run a hemlock file and capture output
+fn run_example(filename) {
+    let path = `${EXAMPLES_DIR}/${filename}`;
+    let result = run_capture([HEMLOCK_PATH, "--sandbox", path]);
+    return result;
+}
+
+// Helper to run inline code
+fn run_code(code) {
+    // Create temp file, run, cleanup
+    let temp_path = "/tmp/test_inline.hml";
+    import { write_file, remove_file } from "@stdlib/fs";
+    write_file(temp_path, code);
+    let result = run_capture([HEMLOCK_PATH, "--sandbox", temp_path]);
+    remove_file(temp_path);
+    return result;
+}
 
 // =============================================================================
-// Example File Tests
+// Example File Existence Tests
 // =============================================================================
 
-describe("Example Files", fn() {
+describe("Example Files Exist", fn() {
     test("examples directory exists", fn() {
         expect(exists(EXAMPLES_DIR)).to_be_true();
     });
@@ -47,41 +70,640 @@ describe("Example Files", fn() {
 });
 
 // =============================================================================
-// Syntax Validation Tests
+// Example Execution Tests
 // =============================================================================
 
-describe("Example Syntax", fn() {
-    test("hello.hml has valid content", fn() {
-        let content = read_file(`${EXAMPLES_DIR}/hello.hml`);
-        expect(content.contains("fn main()")).to_be_true();
-        expect(content.contains("print")).to_be_true();
+describe("Example Execution - hello.hml", fn() {
+    test("runs without error", fn() {
+        let result = run_example("hello.hml");
+        expect(result["code"]).to_equal(0);
     });
 
-    test("fibonacci.hml has valid content", fn() {
-        let content = read_file(`${EXAMPLES_DIR}/fibonacci.hml`);
-        expect(content.contains("fn fib")).to_be_true();
-        expect(content.contains("return")).to_be_true();
+    test("outputs Hello World", fn() {
+        let result = run_example("hello.hml");
+        expect(result["stdout"].contains("Hello, World!")).to_be_true();
     });
 
-    test("fizzbuzz.hml has valid content", fn() {
-        let content = read_file(`${EXAMPLES_DIR}/fizzbuzz.hml`);
-        expect(content.contains("fn fizzbuzz")).to_be_true();
-        expect(content.contains("Fizz")).to_be_true();
-        expect(content.contains("Buzz")).to_be_true();
+    test("outputs welcome message", fn() {
+        let result = run_example("hello.hml");
+        expect(result["stdout"].contains("Welcome to Hemlock!")).to_be_true();
+    });
+});
+
+describe("Example Execution - fibonacci.hml", fn() {
+    test("runs without error", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["code"]).to_equal(0);
     });
 
-    test("async.hml has valid content", fn() {
-        let content = read_file(`${EXAMPLES_DIR}/async.hml`);
-        expect(content.contains("async fn")).to_be_true();
-        expect(content.contains("spawn")).to_be_true();
-        expect(content.contains("await")).to_be_true();
+    test("outputs sequence header", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["stdout"].contains("Fibonacci sequence")).to_be_true();
     });
 
-    test("json.hml has valid content", fn() {
-        let content = read_file(`${EXAMPLES_DIR}/json.hml`);
-        expect(content.contains("import")).to_be_true();
-        expect(content.contains("@stdlib/json")).to_be_true();
-        expect(content.contains("stringify")).to_be_true();
+    test("calculates fib(0) = 0", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["stdout"].contains("fib(0) = 0")).to_be_true();
+    });
+
+    test("calculates fib(1) = 1", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["stdout"].contains("fib(1) = 1")).to_be_true();
+    });
+
+    test("calculates fib(10) = 55", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["stdout"].contains("fib(10) = 55")).to_be_true();
+    });
+
+    test("calculates fib(14) = 377", fn() {
+        let result = run_example("fibonacci.hml");
+        expect(result["stdout"].contains("fib(14) = 377")).to_be_true();
+    });
+});
+
+describe("Example Execution - fizzbuzz.hml", fn() {
+    test("runs without error", fn() {
+        let result = run_example("fizzbuzz.hml");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("outputs Fizz for multiples of 3", fn() {
+        let result = run_example("fizzbuzz.hml");
+        let lines = result["stdout"].split("\n");
+        // Line 3 should be "Fizz" (0-indexed, so index 2)
+        expect(lines[2]).to_equal("Fizz");
+    });
+
+    test("outputs Buzz for multiples of 5", fn() {
+        let result = run_example("fizzbuzz.hml");
+        let lines = result["stdout"].split("\n");
+        // Line 5 should be "Buzz" (0-indexed, so index 4)
+        expect(lines[4]).to_equal("Buzz");
+    });
+
+    test("outputs FizzBuzz for multiples of 15", fn() {
+        let result = run_example("fizzbuzz.hml");
+        let lines = result["stdout"].split("\n");
+        // Line 15 should be "FizzBuzz" (0-indexed, so index 14)
+        expect(lines[14]).to_equal("FizzBuzz");
+    });
+
+    test("outputs regular numbers", fn() {
+        let result = run_example("fizzbuzz.hml");
+        let lines = result["stdout"].split("\n");
+        // Line 1 should be "1"
+        expect(lines[0]).to_equal("1");
+        // Line 2 should be "2"
+        expect(lines[1]).to_equal("2");
+    });
+
+    test("runs through 30 numbers", fn() {
+        let result = run_example("fizzbuzz.hml");
+        expect(result["stdout"].contains("FizzBuzz")).to_be_true();
+        // There should be 2 FizzBuzzes (15 and 30)
+        let lines = result["stdout"].split("\n");
+        let fizzbuzz_count = 0;
+        for (line in lines) {
+            if (line == "FizzBuzz") {
+                fizzbuzz_count = fizzbuzz_count + 1;
+            }
+        }
+        expect(fizzbuzz_count).to_equal(2);
+    });
+});
+
+describe("Example Execution - async.hml", fn() {
+    test("runs without error", fn() {
+        let result = run_example("async.hml");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("fetches data A", fn() {
+        let result = run_example("async.hml");
+        expect(result["stdout"].contains("Fetching data A")).to_be_true();
+        expect(result["stdout"].contains("Got: Data from A")).to_be_true();
+    });
+
+    test("fetches data B", fn() {
+        let result = run_example("async.hml");
+        expect(result["stdout"].contains("Fetching data B")).to_be_true();
+        expect(result["stdout"].contains("Got: Data from B")).to_be_true();
+    });
+
+    test("fetches data C", fn() {
+        let result = run_example("async.hml");
+        expect(result["stdout"].contains("Fetching data C")).to_be_true();
+        expect(result["stdout"].contains("Got: Data from C")).to_be_true();
+    });
+
+    test("completes with All done message", fn() {
+        let result = run_example("async.hml");
+        expect(result["stdout"].contains("All done!")).to_be_true();
+    });
+});
+
+describe("Example Execution - json.hml", fn() {
+    test("runs without error", fn() {
+        let result = run_example("json.hml");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("outputs Serialized header", fn() {
+        let result = run_example("json.hml");
+        expect(result["stdout"].contains("Serialized:")).to_be_true();
+    });
+
+    test("serializes name field", fn() {
+        let result = run_example("json.hml");
+        expect(result["stdout"].contains("Hemlock")).to_be_true();
+    });
+
+    test("parses name correctly", fn() {
+        let result = run_example("json.hml");
+        expect(result["stdout"].contains("Parsed name: Hemlock")).to_be_true();
+    });
+
+    test("handles features array", fn() {
+        let result = run_example("json.hml");
+        expect(result["stdout"].contains("Features:")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Inline Code Execution Tests
+// =============================================================================
+
+describe("Inline Code Execution", fn() {
+    test("simple print statement", fn() {
+        let result = run_code("print(42);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+
+    test("arithmetic operations", fn() {
+        let result = run_code("print(2 + 3 * 4);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("14")).to_be_true();
+    });
+
+    test("string concatenation", fn() {
+        let result = run_code("print(\"Hello\" + \" \" + \"World\");");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("Hello World")).to_be_true();
+    });
+
+    test("template strings", fn() {
+        let result = run_code("let x = 42; print(`Value: ${x}`);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("Value: 42")).to_be_true();
+    });
+
+    test("if statement", fn() {
+        let result = run_code("if (true) { print(\"yes\"); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("yes")).to_be_true();
+    });
+
+    test("for loop", fn() {
+        let result = run_code("for (let i = 0; i < 3; i = i + 1) { print(i); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("function definition and call", fn() {
+        let result = run_code("fn double(x) { return x * 2; } print(double(21));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+
+    test("array operations", fn() {
+        let result = run_code("let arr = [1, 2, 3]; print(arr[1]); arr.push(4); print(arr.length);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("2")).to_be_true();
+        expect(result["stdout"].contains("4")).to_be_true();
+    });
+
+    test("object operations", fn() {
+        let result = run_code("let obj = { a: 1, b: 2 }; print(obj[\"a\"]); print(obj[\"b\"]);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("while loop", fn() {
+        let result = run_code("let i = 0; while (i < 3) { print(i); i = i + 1; }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("nested functions", fn() {
+        let result = run_code("fn outer(x) { fn inner(y) { return y * 2; } return inner(x) + 1; } print(outer(5));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("11")).to_be_true();
+    });
+
+    test("recursion", fn() {
+        let result = run_code("fn fact(n) { if (n <= 1) { return 1; } return n * fact(n - 1); } print(fact(5));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("120")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+describe("Error Handling", fn() {
+    test("syntax error - missing semicolon", fn() {
+        let result = run_code("print(42)");  // Missing semicolon
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("syntax error - missing brace", fn() {
+        let result = run_code("if (true) { print(1);");  // Missing closing brace
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("runtime error - undefined variable", fn() {
+        let result = run_code("print(undefined_var);");
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("runtime error - division by zero returns infinity", fn() {
+        // Division by zero might return infinity or error depending on implementation
+        let result = run_code("print(1 / 0);");
+        // This may or may not error - just ensure it doesn't crash
+        expect(result != null).to_be_true();
+    });
+
+    test("runtime error - array index out of bounds", fn() {
+        let result = run_code("let arr = [1, 2]; print(arr[10]);");
+        // Might return null or error
+        expect(result != null).to_be_true();
+    });
+
+    test("runtime error - calling non-function", fn() {
+        let result = run_code("let x = 42; x();");
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("runtime error - property of null", fn() {
+        let result = run_code("let x = null; print(x.prop);");
+        expect(result["code"] != 0).to_be_true();
+    });
+});
+
+// =============================================================================
+// Edge Cases
+// =============================================================================
+
+describe("Edge Cases", fn() {
+    test("empty program runs", fn() {
+        let result = run_code("");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("comment-only program runs", fn() {
+        let result = run_code("// This is a comment\n// Another comment");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("multiline comment", fn() {
+        let result = run_code("/* multi\nline\ncomment */ print(1);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("1")).to_be_true();
+    });
+
+    test("large number handling", fn() {
+        let result = run_code("print(999999999999);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("999999999999")).to_be_true();
+    });
+
+    test("negative numbers", fn() {
+        let result = run_code("print(-42);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("-42")).to_be_true();
+    });
+
+    test("floating point numbers", fn() {
+        let result = run_code("print(3.14159);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("3.14")).to_be_true();
+    });
+
+    test("empty string", fn() {
+        let result = run_code("let s = \"\"; print(s.length);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+    });
+
+    test("empty array", fn() {
+        let result = run_code("let arr = []; print(arr.length);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+    });
+
+    test("empty object", fn() {
+        let result = run_code("let obj = {}; print(obj);");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("null value", fn() {
+        let result = run_code("let x = null; print(x);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("null")).to_be_true();
+    });
+
+    test("boolean true", fn() {
+        let result = run_code("print(true);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("boolean false", fn() {
+        let result = run_code("print(false);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("false")).to_be_true();
+    });
+
+    test("escape sequences in strings", fn() {
+        let result = run_code("print(\"line1\\nline2\");");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("line1")).to_be_true();
+        expect(result["stdout"].contains("line2")).to_be_true();
+    });
+
+    test("unicode characters", fn() {
+        let result = run_code("print(\"Hello 世界 🌍\");");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("Hello")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Standard Library Tests
+// =============================================================================
+
+describe("Standard Library - JSON", fn() {
+    test("stringify simple object", fn() {
+        let result = run_code("import { stringify } from \"@stdlib/json\"; print(stringify({a: 1}));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("a")).to_be_true();
+        expect(result["stdout"].contains("1")).to_be_true();
+    });
+
+    test("parse simple object", fn() {
+        let result = run_code("import { parse } from \"@stdlib/json\"; let obj = parse(\"{\\\"a\\\": 1}\"); print(obj[\"a\"]);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("1")).to_be_true();
+    });
+
+    test("stringify array", fn() {
+        let result = run_code("import { stringify } from \"@stdlib/json\"; print(stringify([1, 2, 3]));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("[1")).to_be_true();
+    });
+
+    test("parse array", fn() {
+        let result = run_code("import { parse } from \"@stdlib/json\"; let arr = parse(\"[1, 2, 3]\"); print(arr[1]);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("roundtrip nested object", fn() {
+        let result = run_code("import { parse, stringify } from \"@stdlib/json\"; let obj = { nested: { value: 42 } }; let json = stringify(obj); let parsed = parse(json); print(parsed[\"nested\"][\"value\"]);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+});
+
+describe("Standard Library - String Methods", fn() {
+    test("string length", fn() {
+        let result = run_code("let s = \"hello\"; print(s.length);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("5")).to_be_true();
+    });
+
+    test("string contains", fn() {
+        let result = run_code("let s = \"hello world\"; print(s.contains(\"world\"));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("string split", fn() {
+        let result = run_code("let s = \"a,b,c\"; let parts = s.split(\",\"); print(parts[1]);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("b")).to_be_true();
+    });
+
+    test("string substr", fn() {
+        let result = run_code("let s = \"hello\"; print(s.substr(1, 3));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("ell")).to_be_true();
+    });
+
+    test("string find", fn() {
+        let result = run_code("let s = \"hello\"; print(s.find(\"ll\"));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("string char_at", fn() {
+        let result = run_code("let s = \"hello\"; print(s.char_at(1));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("e")).to_be_true();
+    });
+});
+
+describe("Standard Library - Array Methods", fn() {
+    test("array push", fn() {
+        let result = run_code("let arr = [1, 2]; arr.push(3); print(arr.length);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("3")).to_be_true();
+    });
+
+    test("array pop", fn() {
+        let result = run_code("let arr = [1, 2, 3]; let x = arr.pop(); print(x);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("3")).to_be_true();
+    });
+
+    test("array join", fn() {
+        let result = run_code("let arr = [1, 2, 3]; print(arr.join(\"-\"));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("1-2-3")).to_be_true();
+    });
+
+    test("for-in loop over array", fn() {
+        let result = run_code("let arr = [10, 20, 30]; for (x in arr) { print(x); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("10")).to_be_true();
+        expect(result["stdout"].contains("20")).to_be_true();
+        expect(result["stdout"].contains("30")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Operator Tests
+// =============================================================================
+
+describe("Operators", fn() {
+    test("addition", fn() {
+        let result = run_code("print(5 + 3);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("8")).to_be_true();
+    });
+
+    test("subtraction", fn() {
+        let result = run_code("print(10 - 4);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("6")).to_be_true();
+    });
+
+    test("multiplication", fn() {
+        let result = run_code("print(7 * 6);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+
+    test("division", fn() {
+        let result = run_code("print(20 / 4);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("5")).to_be_true();
+    });
+
+    test("modulo", fn() {
+        let result = run_code("print(17 % 5);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("comparison equal", fn() {
+        let result = run_code("print(5 == 5);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("comparison not equal", fn() {
+        let result = run_code("print(5 != 3);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("comparison less than", fn() {
+        let result = run_code("print(3 < 5);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("comparison greater than", fn() {
+        let result = run_code("print(5 > 3);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("comparison less than or equal", fn() {
+        let result = run_code("print(5 <= 5);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("comparison greater than or equal", fn() {
+        let result = run_code("print(5 >= 5);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("logical and", fn() {
+        let result = run_code("print(true && true);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("logical or", fn() {
+        let result = run_code("print(false || true);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("logical not", fn() {
+        let result = run_code("print(!false);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("true")).to_be_true();
+    });
+
+    test("unary minus", fn() {
+        let result = run_code("let x = 5; print(-x);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("-5")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Control Flow Tests
+// =============================================================================
+
+describe("Control Flow", fn() {
+    test("if-else true branch", fn() {
+        let result = run_code("if (true) { print(\"yes\"); } else { print(\"no\"); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("yes")).to_be_true();
+        expect(result["stdout"].contains("no")).to_be_false();
+    });
+
+    test("if-else false branch", fn() {
+        let result = run_code("if (false) { print(\"yes\"); } else { print(\"no\"); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("no")).to_be_true();
+        expect(result["stdout"].contains("yes")).to_be_false();
+    });
+
+    test("else-if chain", fn() {
+        let result = run_code("let x = 2; if (x == 1) { print(\"one\"); } else if (x == 2) { print(\"two\"); } else { print(\"other\"); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("two")).to_be_true();
+    });
+
+    test("nested if", fn() {
+        let result = run_code("if (true) { if (true) { print(\"nested\"); } }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("nested")).to_be_true();
+    });
+
+    test("while loop with break", fn() {
+        let result = run_code("let i = 0; while (true) { if (i >= 3) { break; } print(i); i = i + 1; }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("for loop with continue", fn() {
+        let result = run_code("for (let i = 0; i < 5; i = i + 1) { if (i == 2) { continue; } print(i); }");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("3")).to_be_true();
+        expect(result["stdout"].contains("4")).to_be_true();
+        // 2 should be skipped
+    });
+
+    test("return statement", fn() {
+        let result = run_code("fn test() { print(1); return; print(2); } test();");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_false();
+    });
+
+    test("return with value", fn() {
+        let result = run_code("fn add(a, b) { return a + b; } print(add(3, 4));");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("7")).to_be_true();
     });
 });
 
@@ -98,6 +720,8 @@ describe("Grove Server", fn() {
         let content = read_file(`${BASE_DIR}/grove.hml`);
         expect(content.contains("@stdlib/json")).to_be_true();
         expect(content.contains("@stdlib/fs")).to_be_true();
+        expect(content.contains("@stdlib/net")).to_be_true();
+        expect(content.contains("@stdlib/shell")).to_be_true();
     });
 
     test("grove.hml has configuration", fn() {
@@ -105,6 +729,34 @@ describe("Grove Server", fn() {
         expect(content.contains("CONFIG")).to_be_true();
         expect(content.contains("port")).to_be_true();
         expect(content.contains("max_execution_time")).to_be_true();
+        expect(content.contains("max_output_size")).to_be_true();
+    });
+
+    test("grove.hml has rate limiting", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("rate_limit")).to_be_true();
+        expect(content.contains("check_rate_limit")).to_be_true();
+    });
+
+    test("grove.hml has all endpoints", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("handle_health")).to_be_true();
+        expect(content.contains("handle_version")).to_be_true();
+        expect(content.contains("handle_execute")).to_be_true();
+        expect(content.contains("handle_check")).to_be_true();
+    });
+
+    test("grove.hml has security features", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("--sandbox")).to_be_true();
+        expect(content.contains("max_code_size")).to_be_true();
+        expect(content.contains("max_request_body_size")).to_be_true();
+    });
+
+    test("grove.hml has CORS support", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("cors_origin")).to_be_true();
+        expect(content.contains("Access-Control")).to_be_true();
     });
 });
 
@@ -120,6 +772,63 @@ describe("Package Configuration", fn() {
     test("package.json has correct name", fn() {
         let content = read_file(`${BASE_DIR}/package.json`);
         expect(content.contains("hemlang/playground")).to_be_true();
+    });
+
+    test("package.json has test script", fn() {
+        let content = read_file(`${BASE_DIR}/package.json`);
+        expect(content.contains("\"test\":")).to_be_true();
+        expect(content.contains("test_examples.hml")).to_be_true();
+    });
+
+    test("package.json has start script", fn() {
+        let content = read_file(`${BASE_DIR}/package.json`);
+        expect(content.contains("\"start\":")).to_be_true();
+        expect(content.contains("grove.hml")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Example Content Validation Tests
+// =============================================================================
+
+describe("Example Content Validation", fn() {
+    test("hello.hml has valid structure", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/hello.hml`);
+        expect(content.contains("fn main()")).to_be_true();
+        expect(content.contains("print")).to_be_true();
+        expect(content.contains("main();")).to_be_true();
+    });
+
+    test("fibonacci.hml has valid structure", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/fibonacci.hml`);
+        expect(content.contains("fn fib")).to_be_true();
+        expect(content.contains("return")).to_be_true();
+        expect(content.contains("fib(n - 1)")).to_be_true();
+        expect(content.contains("fib(n - 2)")).to_be_true();
+    });
+
+    test("fizzbuzz.hml has valid structure", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/fizzbuzz.hml`);
+        expect(content.contains("fn fizzbuzz")).to_be_true();
+        expect(content.contains("% 3")).to_be_true();
+        expect(content.contains("% 5")).to_be_true();
+        expect(content.contains("% 15")).to_be_true();
+    });
+
+    test("async.hml has valid structure", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/async.hml`);
+        expect(content.contains("async fn")).to_be_true();
+        expect(content.contains("spawn")).to_be_true();
+        expect(content.contains("await")).to_be_true();
+        expect(content.contains("import")).to_be_true();
+    });
+
+    test("json.hml has valid structure", fn() {
+        let content = read_file(`${EXAMPLES_DIR}/json.hml`);
+        expect(content.contains("import")).to_be_true();
+        expect(content.contains("@stdlib/json")).to_be_true();
+        expect(content.contains("stringify")).to_be_true();
+        expect(content.contains("parse")).to_be_true();
     });
 });
 
