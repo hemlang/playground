@@ -432,10 +432,11 @@ fn execute_code(code, stdin_data) {
             `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`
         ]);
     } else {
-        // Use array-based command execution (safer than shell string interpolation)
+        // Use shell mode for stderr redirection (run_capture doesn't capture stderr in array mode)
+        // Paths are server-controlled and quoted, so this is safe
         result = run_capture([
-            "timeout", `${timeout_sec}`,
-            CONFIG["hemlock_path"], "--sandbox", temp_file
+            "sh", "-c",
+            `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" 2>&1`
         ]);
     }
     let execution_time = time_ms() - start_time;
@@ -533,9 +534,11 @@ fn handle_check(body) {
     let temp_file = `${CONFIG["temp_dir"]}/check_${ts}_${rand}.hml`;
     write_file(temp_file, code);
 
-    // Run hemlockc --check using array-based execution (safer)
+    // Run hemlockc --check with stderr capture
+    // Paths are server-controlled and quoted, so this is safe
     let result = run_capture([
-        CONFIG["hemlockc_path"], "--check", temp_file
+        "sh", "-c",
+        `"${CONFIG["hemlockc_path"]}" --check "${temp_file}" 2>&1`
     ]);
 
     // Cleanup temp file
