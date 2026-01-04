@@ -334,6 +334,7 @@
 
         /* Token colors - Tokyo Night theme */
         .tok-keyword { color: var(--accent-purple); }
+        .tok-type { color: #7dcfff; }
         .tok-string { color: var(--accent-green); }
         .tok-number { color: var(--accent-yellow); }
         .tok-comment { color: var(--text-dim); font-style: italic; }
@@ -486,16 +487,25 @@
         // Hemlock Syntax Highlighter
         const Highlighter = {
             keywords: new Set([
-                'if', 'else', 'for', 'while', 'return', 'break', 'continue',
-                'fn', 'async', 'await', 'spawn', 'let', 'import', 'from',
-                'try', 'catch', 'in'
+                // Control flow
+                'if', 'else', 'for', 'while', 'loop', 'break', 'continue',
+                'switch', 'case', 'default', 'return',
+                // Declarations
+                'let', 'const', 'fn', 'async', 'define', 'enum', 'object', 'type', 'extern',
+                // Other keywords
+                'in', 'ref', 'self', 'try', 'catch', 'finally', 'throw',
+                'await', 'import', 'export', 'from', 'as', 'defer'
+            ]),
+            types: new Set([
+                'i8', 'i16', 'i32', 'i64', 'u8', 'u16', 'u32', 'u64',
+                'f32', 'f64', 'integer', 'number', 'byte', 'bool', 'string',
+                'rune', 'ptr', 'buffer', 'array', 'void'
             ]),
             constants: new Set(['true', 'false', 'null']),
             builtins: new Set([
-                'print', 'print_ln', 'length', 'push', 'pop', 'shift',
+                'print', 'eprint', 'read_line', 'length', 'push', 'pop', 'shift',
                 'join', 'split', 'substr', 'char_at', 'find', 'contains',
-                'keys', 'values', 'parse', 'stringify', 'i32', 'rune',
-                'read_line', 'eprint'
+                'keys', 'values', 'parse', 'stringify', 'spawn'
             ]),
 
             // Tokenize and highlight code
@@ -518,6 +528,18 @@
                     if (code[i] === '"') {
                         let j = i + 1;
                         while (j < code.length && code[j] !== '"') {
+                            if (code[j] === '\\') j++;
+                            j++;
+                        }
+                        result += this.span('string', this.esc(code.slice(i, j + 1)));
+                        i = j + 1;
+                        continue;
+                    }
+
+                    // Rune literals (single-quoted characters)
+                    if (code[i] === "'") {
+                        let j = i + 1;
+                        while (j < code.length && code[j] !== "'") {
                             if (code[j] === '\\') j++;
                             j++;
                         }
@@ -561,10 +583,19 @@
                         continue;
                     }
 
-                    // Numbers
+                    // Numbers (including hex 0x, binary 0b)
                     if (/[0-9]/.test(code[i]) || (code[i] === '.' && /[0-9]/.test(code[i + 1]))) {
                         let j = i;
-                        while (j < code.length && /[0-9.eE\-]/.test(code[j])) j++;
+                        // Handle hex (0x) and binary (0b) literals
+                        if (code[i] === '0' && (code[i + 1] === 'x' || code[i + 1] === 'X')) {
+                            j += 2;
+                            while (j < code.length && /[0-9a-fA-F]/.test(code[j])) j++;
+                        } else if (code[i] === '0' && (code[i + 1] === 'b' || code[i + 1] === 'B')) {
+                            j += 2;
+                            while (j < code.length && /[01]/.test(code[j])) j++;
+                        } else {
+                            while (j < code.length && /[0-9.eE\-]/.test(code[j])) j++;
+                        }
                         result += this.span('number', code.slice(i, j));
                         i = j;
                         continue;
@@ -579,6 +610,9 @@
                         if (this.keywords.has(word)) {
                             result += this.span('keyword', word);
                             lastKeyword = word;
+                        } else if (this.types.has(word)) {
+                            result += this.span('type', word);
+                            lastKeyword = null;
                         } else if (this.constants.has(word)) {
                             result += this.span('constant', word);
                             lastKeyword = null;
@@ -611,9 +645,34 @@
                     }
 
                     // Operators
-                    if ('+-*/%=<>!&|'.includes(code[i])) {
+                    if ('+-*/%=<>!&|^~?'.includes(code[i])) {
                         let op = code[i];
-                        if (code[i + 1] && '=&|'.includes(code[i + 1])) {
+                        // Handle multi-character operators
+                        if (code[i] === '?' && code[i + 1] === '.') {
+                            op = '?.';
+                            i++;
+                        } else if (code[i] === '?' && code[i + 1] === '?') {
+                            op = '??';
+                            i++;
+                            if (code[i + 1] === '=') {
+                                op = '??=';
+                                i++;
+                            }
+                        } else if (code[i] === '<' && code[i + 1] === '<') {
+                            op = '<<';
+                            i++;
+                            if (code[i + 1] === '=') {
+                                op = '<<=';
+                                i++;
+                            }
+                        } else if (code[i] === '>' && code[i + 1] === '>') {
+                            op = '>>';
+                            i++;
+                            if (code[i + 1] === '=') {
+                                op = '>>=';
+                                i++;
+                            }
+                        } else if (code[i + 1] && '=&|'.includes(code[i + 1])) {
                             op += code[++i];
                         }
                         result += this.span('operator', this.esc(op));
@@ -623,6 +682,12 @@
 
                     // Punctuation
                     if ('(){}[];:,.'.includes(code[i])) {
+                        // Handle ... spread operator
+                        if (code[i] === '.' && code[i + 1] === '.' && code[i + 2] === '.') {
+                            result += this.span('operator', '...');
+                            i += 3;
+                            continue;
+                        }
                         result += this.span('punctuation', this.esc(code[i]));
                         i++;
                         continue;
