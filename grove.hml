@@ -469,7 +469,7 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
     }
 
     // Construct bwrap command
-    // Note: Using sh -c to set ulimits inside the sandbox
+    // Note: Using bash -c to set ulimits inside the sandbox (sh/dash doesn't support -u)
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         // Namespace isolation
         `--unshare-user ` +
@@ -510,7 +510,8 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
         `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
         `--setenv HOME /tmp ` +
         // The command to run inside sandbox with resource limits
-        `-- sh -c "ulimit -v ${mem_bytes} && ulimit -u ${CONFIG["sandbox_pids_max"]} && ${inner_cmd}"`;
+        // Use bash for ulimit -u support (max user processes)
+        `-- bash -c "ulimit -v ${mem_bytes} 2>/dev/null; ulimit -u ${CONFIG["sandbox_pids_max"]} 2>/dev/null; ${inner_cmd}"`;
 
     return bwrap_cmd;
 }
