@@ -51,6 +51,19 @@
             font-weight: 600;
         }
 
+        .docs-link {
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-left: 16px;
+            transition: color 0.15s ease;
+        }
+
+        .docs-link:hover {
+            color: var(--accent);
+        }
+
         .logo-icon {
             font-size: 1.5rem;
         }
@@ -407,6 +420,7 @@
         <div class="logo">
             <span class="logo-icon">🌲</span>
             <span>Hemlock Playground</span>
+            <a href="https://hemlang.dev" target="_blank" rel="noopener" class="docs-link">Docs</a>
         </div>
         <div class="toolbar">
             <div class="examples-dropdown">
@@ -461,6 +475,7 @@
         <div class="status-item">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Ready</span>
+            <span style="margin-left: 16px; color: var(--text-dim);">Sandboxed: network and file I/O unavailable</span>
         </div>
         <div class="status-item">
             <span id="version-info">Hemlock Playground v1.0</span>
