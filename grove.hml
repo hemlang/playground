@@ -25,7 +25,7 @@ let CONFIG = {
     max_output_size: 65536,
     max_code_size: 102400,
     max_request_body_size: 131072,  // 128KB max request body
-    temp_dir: "/tmp/hemlock-playground",
+    temp_dir: "/var/tmp/hemlock-playground",
     hemlock_path: "hemlock",
     hemlockc_path: "hemlockc",
     hemlock_version: "unknown",
@@ -493,12 +493,14 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
         `--ro-bind-try /sbin /sbin ` +
         // Hemlock binary location (if not in standard path)
         `--ro-bind-try /usr/local /usr/local ` +
-        // Temp directory for code execution (read-only bind the specific files)
-        `--ro-bind "${temp_file}" "${temp_file}" ` +
-        // Bind stdin file if present
-        (stdin_file != null ? `--ro-bind "${stdin_file}" "${stdin_file}" ` : "") +
-        // Writable tmpfs for any temp files hemlock might need
+        // Bind /var/tmp for the playground temp directory
+        // Using /var/tmp to avoid conflict with --tmpfs /tmp
+        `--dir /var ` +
+        `--dir /var/tmp ` +
+        `--ro-bind "${CONFIG["temp_dir"]}" "${CONFIG["temp_dir"]}" ` +
+        // Writable tmpfs for hemlock's internal temp needs
         `--tmpfs /tmp ` +
+        `--setenv TMPDIR /tmp ` +
         // Minimal /dev
         `--dev /dev ` +
         // Proc filesystem (needed for some operations)
