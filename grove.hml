@@ -635,6 +635,35 @@ fn handle_version() {
     });
 }
 
+fn build_bwrap_check_command(temp_file) {
+    // Build bubblewrap command for type checking (lighter than execute)
+    // hemlockc only parses, so we can be more restrictive
+    let check_cmd = `"${CONFIG["hemlockc_path"]}" --check "${temp_file}"`;
+
+    let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
+        `--unshare-user ` +
+        `--unshare-net ` +
+        `--unshare-ipc ` +
+        `--uid 65534 ` +
+        `--gid 65534 ` +
+        `--die-with-parent ` +
+        `--new-session ` +
+        `--ro-bind /usr /usr ` +
+        `--ro-bind /lib /lib ` +
+        `--ro-bind-try /lib64 /lib64 ` +
+        `--ro-bind /bin /bin ` +
+        `--ro-bind-try /usr/local /usr/local ` +
+        `--dir /var ` +
+        `--dir /var/tmp ` +
+        `--ro-bind "${CONFIG["temp_dir"]}" "${CONFIG["temp_dir"]}" ` +
+        `--tmpfs /tmp ` +
+        `--clearenv ` +
+        `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
+        `-- sh -c "${check_cmd}"`;
+
+    return bwrap_cmd;
+}
+
 fn handle_check(body) {
     // Parse JSON body
     let data = null;
@@ -671,12 +700,20 @@ fn handle_check(body) {
     let temp_file = `${CONFIG["temp_dir"]}/check_${ts}_${rand}.hml`;
     write_file(temp_file, code);
 
-    // Run hemlockc --check with stderr capture
-    // Paths are server-controlled and quoted, so this is safe
-    let result = run_capture([
-        "sh", "-c",
-        `"${CONFIG["hemlockc_path"]}" --check "${temp_file}" 2>&1`
-    ]);
+    // Run hemlockc --check with optional sandboxing
+    let result = null;
+    if (CONFIG["secure_mode"]) {
+        let bwrap_cmd = build_bwrap_check_command(temp_file);
+        result = run_capture([
+            "sh", "-c",
+            `timeout 30 ${bwrap_cmd} 2>&1`
+        ]);
+    } else {
+        result = run_capture([
+            "sh", "-c",
+            `timeout 30 "${CONFIG["hemlockc_path"]}" --check "${temp_file}" 2>&1`
+        ]);
+    }
 
     // Cleanup temp file
     if (exists(temp_file)) {
