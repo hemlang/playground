@@ -193,6 +193,28 @@ fn check_user_namespaces() {
     return false;
 }
 
+// Execute a shell command using exec_argv to avoid metacharacter warnings.
+// This is used when we intentionally need shell features (redirects, pipes, etc.)
+// Uses ["sh", "-c", command] pattern with direct fork/execvp.
+fn run_shell(command: string): object {
+    try {
+        let result = __exec_argv(["sh", "-c", command]);
+        return {
+            success: result["exit_code"] == 0,
+            stdout: result["output"],
+            stderr: result["stderr"],
+            code: result["exit_code"]
+        };
+    } catch (e) {
+        return {
+            success: false,
+            stdout: "",
+            stderr: "" + e,
+            code: -1
+        };
+    }
+}
+
 fn load_config() {
     let port = getenv("GROVE_PORT");
     if (port != null) {
@@ -555,22 +577,13 @@ fn execute_code(code, stdin_data) {
     if (CONFIG["secure_mode"]) {
         // Secure mode: use bubblewrap for OS-level isolation
         let bwrap_cmd = build_bwrap_command(temp_file, stdin_file, timeout_sec);
-        result = run_capture([
-            "sh", "-c",
-            `timeout ${timeout_sec} ${bwrap_cmd} 2>&1`
-        ]);
+        result = run_shell(`timeout ${timeout_sec} ${bwrap_cmd} 2>&1`);
     } else {
         // Basic mode: just use hemlock --sandbox with timeout
         if (stdin_file != null) {
-            result = run_capture([
-                "sh", "-c",
-                `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`
-            ]);
+            result = run_shell(`timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" < "${stdin_file}" 2>&1`);
         } else {
-            result = run_capture([
-                "sh", "-c",
-                `timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" 2>&1`
-            ]);
+            result = run_shell(`timeout ${timeout_sec} "${CONFIG["hemlock_path"]}" --sandbox "${temp_file}" 2>&1`);
         }
     }
     let execution_time = time_ms() - start_time;
@@ -704,15 +717,9 @@ fn handle_check(body) {
     let result = null;
     if (CONFIG["secure_mode"]) {
         let bwrap_cmd = build_bwrap_check_command(temp_file);
-        result = run_capture([
-            "sh", "-c",
-            `timeout 30 ${bwrap_cmd} 2>&1`
-        ]);
+        result = run_shell(`timeout 30 ${bwrap_cmd} 2>&1`);
     } else {
-        result = run_capture([
-            "sh", "-c",
-            `timeout 30 "${CONFIG["hemlockc_path"]}" --check "${temp_file}" 2>&1`
-        ]);
+        result = run_shell(`timeout 30 "${CONFIG["hemlockc_path"]}" --check "${temp_file}" 2>&1`);
     }
 
     // Cleanup temp file
