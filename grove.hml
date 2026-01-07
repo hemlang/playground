@@ -537,12 +537,17 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
 
     // Construct bwrap command
     // Note: Using bash -c to set ulimits inside the sandbox (sh/dash doesn't support -u)
+    let net_flag = "";
+    if (CONFIG["sandbox_network"]) {
+        net_flag = "--unshare-net ";
+    }
+
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         // Namespace isolation
         `--unshare-user ` +
         `--unshare-pid ` +
         // Network isolation (conditional - may not work on all systems)
-        (if (CONFIG["sandbox_network"]) { `--unshare-net `; } else { ""; }) +
+        net_flag +
         `--unshare-ipc ` +
         `--unshare-uts ` +
         `--unshare-cgroup ` +
@@ -700,10 +705,15 @@ fn build_bwrap_check_command(temp_file) {
     // hemlockc only parses, so we can be more restrictive
     let check_cmd = `"${CONFIG["hemlockc_path"]}" --check "${temp_file}"`;
 
+    let net_flag = "";
+    if (CONFIG["sandbox_network"]) {
+        net_flag = "--unshare-net ";
+    }
+
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         `--unshare-user ` +
         // Network isolation (conditional - may not work on all systems)
-        (if (CONFIG["sandbox_network"]) { `--unshare-net `; } else { ""; }) +
+        net_flag +
         `--unshare-ipc ` +
         `--uid 65534 ` +
         `--gid 65534 ` +
