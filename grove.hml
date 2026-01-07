@@ -37,7 +37,8 @@ let CONFIG = {
     bwrap_path: "bwrap",  // Path to bubblewrap binary
     bwrap_available: false,  // Detected at startup
     sandbox_memory_mb: 256,  // Memory limit for sandboxed processes
-    sandbox_pids_max: 50  // Max processes in sandbox
+    sandbox_pids_max: 50,  // Max processes in sandbox
+    sandbox_network: true  // Enable network isolation (disable if kernel doesn't support)
 };
 
 // =============================================================================
@@ -193,6 +194,33 @@ fn check_user_namespaces() {
     return false;
 }
 
+fn check_network_namespace_support() {
+    // Check if network namespace isolation works
+    // This can fail on some systems due to:
+    // - Kernel restrictions on unprivileged network namespaces
+    // - Running inside containers/VMs with limited capabilities
+    // - AppArmor/SELinux policies
+    if (!CONFIG["bwrap_available"]) {
+        return false;
+    }
+    // Try a simple bwrap command with network isolation
+    let test = run_capture([
+        CONFIG["bwrap_path"],
+        "--unshare-user",
+        "--unshare-net",
+        "--uid", "65534",
+        "--gid", "65534",
+        "--ro-bind", "/usr", "/usr",
+        "--ro-bind", "/lib", "/lib",
+        "--ro-bind", "/bin", "/bin",
+        "--symlink", "usr/lib64", "/lib64",
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "/bin/true"
+    ]);
+    return test["code"] == 0;
+}
+
 // Execute a shell command using exec_argv to avoid metacharacter warnings.
 // This is used when we intentionally need shell features (redirects, pipes, etc.)
 // Uses ["sh", "-c", command] pattern with direct fork/execvp.
@@ -259,6 +287,23 @@ fn load_config() {
             print("WARNING: GROVE_SECURE_MODE requested but bubblewrap not found");
             print("         Install bubblewrap: apt install bubblewrap");
             print("         Falling back to basic sandbox mode");
+        }
+    }
+
+    // Network isolation - can be explicitly disabled if kernel doesn't support it
+    let sandbox_net = getenv("GROVE_SANDBOX_NETWORK");
+    if (sandbox_net != null) {
+        // Explicit setting from environment
+        CONFIG["sandbox_network"] = sandbox_net == "1" || to_lower(sandbox_net) == "true";
+    } else if (CONFIG["secure_mode"]) {
+        // Auto-detect network namespace support
+        let net_supported = check_network_namespace_support();
+        if (!net_supported) {
+            print("WARNING: Network namespace isolation not supported on this system");
+            print("         (bwrap: loopback: Failed RTM_NEWADDR is a common cause)");
+            print("         Disabling network isolation, other sandbox features remain active");
+            print("         Set GROVE_SANDBOX_NETWORK=1 to force enable (may fail)");
+            CONFIG["sandbox_network"] = false;
         }
     }
 
@@ -496,7 +541,8 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
         // Namespace isolation
         `--unshare-user ` +
         `--unshare-pid ` +
-        `--unshare-net ` +
+        // Network isolation (conditional - may not work on all systems)
+        (if (CONFIG["sandbox_network"]) { `--unshare-net `; } else { ""; }) +
         `--unshare-ipc ` +
         `--unshare-uts ` +
         `--unshare-cgroup ` +
@@ -644,7 +690,8 @@ fn handle_version() {
         max_output_size: CONFIG["max_output_size"],
         secure_mode: CONFIG["secure_mode"],
         sandbox_memory_mb: CONFIG["sandbox_memory_mb"],
-        sandbox_pids_max: CONFIG["sandbox_pids_max"]
+        sandbox_pids_max: CONFIG["sandbox_pids_max"],
+        sandbox_network: CONFIG["sandbox_network"]
     });
 }
 
@@ -655,7 +702,8 @@ fn build_bwrap_check_command(temp_file) {
 
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         `--unshare-user ` +
-        `--unshare-net ` +
+        // Network isolation (conditional - may not work on all systems)
+        (if (CONFIG["sandbox_network"]) { `--unshare-net `; } else { ""; }) +
         `--unshare-ipc ` +
         `--uid 65534 ` +
         `--gid 65534 ` +
@@ -983,6 +1031,12 @@ fn main() {
         print("  Mode: SECURE (bubblewrap isolation)");
         print(`  Memory limit: ${CONFIG["sandbox_memory_mb"]}MB`);
         print(`  Process limit: ${CONFIG["sandbox_pids_max"]}`);
+        if (CONFIG["sandbox_network"]) {
+            print("  Network: ISOLATED (no outbound connections)");
+        } else {
+            print("  Network: SHARED (sandbox can access network)");
+            print("           Set GROVE_SANDBOX_NETWORK=1 to force isolation");
+        }
     } else {
         print("  Mode: BASIC (hemlock --sandbox only)");
         if (CONFIG["bwrap_available"]) {

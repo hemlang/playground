@@ -252,6 +252,7 @@ Grove accepts environment variables:
 | `HEMLOCKC_PATH` | hemlockc | Path to hemlockc binary (for type checking) |
 | `GROVE_SECURE_MODE` | false | Enable bubblewrap sandboxing |
 | `GROVE_BWRAP_PATH` | bwrap | Path to bubblewrap binary |
+| `GROVE_SANDBOX_NETWORK` | auto | Network isolation (auto-detected; set to 0 to disable) |
 | `GROVE_SANDBOX_MEMORY_MB` | 256 | Memory limit per execution (MB) |
 | `GROVE_SANDBOX_PIDS_MAX` | 50 | Max processes per execution |
 | `GROVE_RATE_LIMIT` | 60 | Max requests per minute per IP |
@@ -288,6 +289,29 @@ Additional protections:
 # Run with secure mode
 GROVE_SECURE_MODE=1 hemlock grove.hml
 ```
+
+### Network Isolation Troubleshooting
+
+Network isolation (`--unshare-net`) may fail on some systems with the error:
+```
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+```
+
+This happens when the kernel doesn't allow unprivileged users to configure network interfaces in a new network namespace. Common causes:
+- Running inside Docker/LXC containers without `--privileged`
+- Kernel security restrictions (AppArmor, SELinux)
+- Missing kernel capabilities
+
+Grove auto-detects this at startup and disables network isolation while keeping other sandbox features. You can also manually control it:
+```bash
+# Disable network isolation (sandbox can access network)
+GROVE_SECURE_MODE=1 GROVE_SANDBOX_NETWORK=0 hemlock grove.hml
+
+# Force network isolation (will fail if not supported)
+GROVE_SECURE_MODE=1 GROVE_SANDBOX_NETWORK=1 hemlock grove.hml
+```
+
+Note: Without network isolation, sandboxed code can make outbound network requests. Consider using a firewall or running Grove on an isolated network.
 
 ### Setup Script
 
