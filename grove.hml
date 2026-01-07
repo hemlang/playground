@@ -179,19 +179,28 @@ fn check_bwrap_available() {
 }
 
 fn check_user_namespaces() {
-    // Check if unprivileged user namespaces are enabled
-    let result = run_capture(["cat", "/proc/sys/kernel/unprivileged_userns_clone"]);
-    if (result["code"] == 0) {
-        let value = trim(result["stdout"]);
-        return value == "1";
+    // Always test bwrap directly - sysctl values can be misleading
+    // when AppArmor, SELinux, or other security policies block namespaces
+    if (!CONFIG["bwrap_available"]) {
+        return false;
     }
-    // If file doesn't exist, namespaces might still work (depends on kernel config)
-    // Try a simple bwrap command to verify
-    if (CONFIG["bwrap_available"]) {
-        let test = run_capture([CONFIG["bwrap_path"], "--unshare-user", "--uid", "65534", "--gid", "65534", "/bin/true"]);
-        return test["code"] == 0;
-    }
-    return false;
+    // Test with a command similar to what we actually run
+    let test = run_capture([
+        CONFIG["bwrap_path"],
+        "--unshare-user",
+        "--unshare-pid",
+        "--unshare-ipc",
+        "--uid", "65534",
+        "--gid", "65534",
+        "--ro-bind", "/usr", "/usr",
+        "--ro-bind", "/lib", "/lib",
+        "--ro-bind", "/bin", "/bin",
+        "--symlink", "usr/lib64", "/lib64",
+        "--proc", "/proc",
+        "--dev", "/dev",
+        "/bin/true"
+    ]);
+    return test["code"] == 0;
 }
 
 fn check_network_namespace_support() {
