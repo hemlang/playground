@@ -629,11 +629,19 @@ fn execute_code(code, stdin_data) {
     let temp_file = `${CONFIG["temp_dir"]}/exec_${ts}_${rand}.hml`;
     write_file(temp_file, code);
 
+    // Make temp file readable by sandboxed user (nobody/65534)
+    if (CONFIG["secure_mode"]) {
+        run_capture(["chmod", "644", temp_file]);
+    }
+
     // Create stdin file if stdin data is provided
     let stdin_file = null;
     if (stdin_data != null && stdin_data != "") {
         stdin_file = `${CONFIG["temp_dir"]}/stdin_${ts}_${rand}.txt`;
         write_file(stdin_file, stdin_data);
+        if (CONFIG["secure_mode"]) {
+            run_capture(["chmod", "644", stdin_file]);
+        }
     }
 
     // Execute with sandbox using timeout command
@@ -785,6 +793,11 @@ fn handle_check(body) {
     let rand = random_suffix(12);
     let temp_file = `${CONFIG["temp_dir"]}/check_${ts}_${rand}.hml`;
     write_file(temp_file, code);
+
+    // Make temp file readable by sandboxed user (nobody/65534)
+    if (CONFIG["secure_mode"]) {
+        run_capture(["chmod", "644", temp_file]);
+    }
 
     // Run hemlockc --check with optional sandboxing
     let result = null;
