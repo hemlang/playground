@@ -527,7 +527,29 @@ fn html_response(status, body) {
 
 fn ensure_temp_dir() {
     if (!exists(CONFIG["temp_dir"])) {
-        run_capture(["mkdir", "-p", CONFIG["temp_dir"]]);
+        let result = run_capture(["mkdir", "-p", CONFIG["temp_dir"]]);
+        if (result["code"] != 0) {
+            // Fall back to /tmp if we can't create the configured dir
+            CONFIG["temp_dir"] = "/tmp/grove-playground";
+            run_capture(["mkdir", "-p", CONFIG["temp_dir"]]);
+        }
+        // Make directory accessible (for multi-user scenarios)
+        run_capture(["chmod", "755", CONFIG["temp_dir"]]);
+    } else {
+        // Directory exists - check if we can write to it
+        let test_file = `${CONFIG["temp_dir"]}/.write_test_${time_ms()}`;
+        let result = run_capture(["touch", test_file]);
+        if (result["code"] != 0) {
+            // Can't write - fall back to /tmp
+            CONFIG["temp_dir"] = "/tmp/grove-playground";
+            if (!exists(CONFIG["temp_dir"])) {
+                run_capture(["mkdir", "-p", CONFIG["temp_dir"]]);
+                run_capture(["chmod", "755", CONFIG["temp_dir"]]);
+            }
+        } else {
+            // Clean up test file
+            run_capture(["rm", "-f", test_file]);
+        }
     }
 }
 
