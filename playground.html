@@ -720,8 +720,8 @@
             hello: [
                 '// Hello World in Hemlock',
                 'fn main() {',
-                '    print("Hello, World!");',
-                '    print("Welcome to Hemlock!");',
+                '\tprint("Hello, World!");',
+                '\tprint("Welcome to Hemlock!");',
                 '}',
                 '',
                 'main();'
@@ -730,17 +730,17 @@
             fibonacci: [
                 '// Fibonacci sequence',
                 'fn fib(n) {',
-                '    if (n <= 1) {',
-                '        return n;',
-                '    }',
-                '    return fib(n - 1) + fib(n - 2);',
+                '\tif (n <= 1) {',
+                '\t\treturn n;',
+                '\t}',
+                '\treturn fib(n - 1) + fib(n - 2);',
                 '}',
                 '',
                 'fn main() {',
-                '    print("Fibonacci sequence:");',
-                '    for (let i = 0; i < 15; i = i + 1) {',
-                '        print("fib(" + i + ") = " + fib(i));',
-                '    }',
+                '\tprint("Fibonacci sequence:");',
+                '\tfor (let i = 0; i < 15; i = i + 1) {',
+                '\t\tprint("fib(" + i + ") = " + fib(i));',
+                '\t}',
                 '}',
                 '',
                 'main();'
@@ -749,21 +749,21 @@
             fizzbuzz: [
                 '// FizzBuzz',
                 'fn fizzbuzz(n) {',
-                '    for (let i = 1; i <= n; i = i + 1) {',
-                '        if (i % 15 == 0) {',
-                '            print("FizzBuzz");',
-                '        } else if (i % 3 == 0) {',
-                '            print("Fizz");',
-                '        } else if (i % 5 == 0) {',
-                '            print("Buzz");',
-                '        } else {',
-                '            print(i);',
-                '        }',
-                '    }',
+                '\tfor (let i = 1; i <= n; i = i + 1) {',
+                '\t\tif (i % 15 == 0) {',
+                '\t\t\tprint("FizzBuzz");',
+                '\t\t} else if (i % 3 == 0) {',
+                '\t\t\tprint("Fizz");',
+                '\t\t} else if (i % 5 == 0) {',
+                '\t\t\tprint("Buzz");',
+                '\t\t} else {',
+                '\t\t\tprint(i);',
+                '\t\t}',
+                '\t}',
                 '}',
                 '',
                 'fn main() {',
-                '    fizzbuzz(30);',
+                '\tfizzbuzz(30);',
                 '}',
                 '',
                 'main();'
@@ -774,24 +774,24 @@
                 'import { sleep } from "@stdlib/time";',
                 '',
                 'async fn fetch_data(id) {',
-                '    print("Fetching data " + id + "...");',
-                '    sleep(0.5); // seconds in hemlock!',
-                '    return "Data from " + id;',
+                '\tprint("Fetching data " + id + "...");',
+                '\tsleep(0.5); // seconds in hemlock!',
+                '\treturn "Data from " + id;',
                 '}',
                 '',
                 'async fn main() {',
-                '    let tasks = [',
-                '        spawn(fetch_data, "A"),',
-                '        spawn(fetch_data, "B"),',
-                '        spawn(fetch_data, "C")',
-                '    ];',
+                '\tlet tasks = [',
+                '\t\tspawn(fetch_data, "A"),',
+                '\t\tspawn(fetch_data, "B"),',
+                '\t\tspawn(fetch_data, "C")',
+                '\t];',
                 '',
-                '    for (task in tasks) {',
-                '        let result = await task;',
-                '        print("Got: " + result);',
-                '    }',
+                '\tfor (task in tasks) {',
+                '\t\tlet result = await task;',
+                '\t\tprint("Got: " + result);',
+                '\t}',
                 '',
-                '    print("All done!");',
+                '\tprint("All done!");',
                 '}',
                 '',
                 'main();'
@@ -802,24 +802,24 @@
                 'import { parse, stringify } from "@stdlib/json";',
                 '',
                 'fn main() {',
-                '    let data = {',
-                '        name: "Hemlock",',
-                '        version: "1.6.4",',
-                '        features: ["fast", "safe", "fun"],',
-                '        config: {',
-                '            debug: true,',
-                '            threads: 4',
-                '        }',
-                '    };',
+                '\tlet data = {',
+                '\t\tname: "Hemlock",',
+                '\t\tversion: "1.6.4",',
+                '\t\tfeatures: ["fast", "safe", "fun"],',
+                '\t\tconfig: {',
+                '\t\t\tdebug: true,',
+                '\t\t\tthreads: 4',
+                '\t\t}',
+                '\t};',
                 '',
-                '    let json_str = stringify(data);',
-                '    print("Serialized:");',
-                '    print(json_str);',
-                '    print("");',
+                '\tlet json_str = stringify(data);',
+                '\tprint("Serialized:");',
+                '\tprint(json_str);',
+                '\tprint("");',
                 '',
-                '    let parsed = parse(json_str);',
-                '    print("Parsed name: " + parsed["name"]);',
-                '    print("Features: " + parsed["features"]);',
+                '\tlet parsed = parse(json_str);',
+                '\tprint("Parsed name: " + parsed["name"]);',
+                '\tprint("Features: " + parsed["features"]);',
                 '}',
                 '',
                 'main();'
@@ -830,24 +830,24 @@
                 '// Expand the "Stdin Input" section below to provide input!',
                 '',
                 'fn main() {',
-                '    print("What is your name?");',
-                '    let name = read_line();',
-                '    ',
-                '    if (name == null) {',
-                '        print("No input provided!");',
-                '        return;',
-                '    }',
-                '    ',
-                '    print("Hello, " + name + "!");',
-                '    print("");',
-                '    ',
-                '    print("How old are you?");',
-                '    let age_str = read_line();',
-                '    ',
-                '    if (age_str != null) {',
-                '        let age = i32(age_str);',
-                '        print("In 10 years you will be " + (age + 10) + "!");',
-                '    }',
+                '\tprint("What is your name?");',
+                '\tlet name = read_line();',
+                '\t',
+                '\tif (name == null) {',
+                '\t\tprint("No input provided!");',
+                '\t\treturn;',
+                '\t}',
+                '\t',
+                '\tprint("Hello, " + name + "!");',
+                '\tprint("");',
+                '\t',
+                '\tprint("How old are you?");',
+                '\tlet age_str = read_line();',
+                '\t',
+                '\tif (age_str != null) {',
+                '\t\tlet age = i32(age_str);',
+                '\t\tprint("In 10 years you will be " + (age + 10) + "!");',
+                '\t}',
                 '}',
                 '',
                 'main();'
@@ -1063,14 +1063,153 @@
         editor.addEventListener('input', updateHighlight);
         editor.addEventListener('scroll', syncScroll);
 
-        // Tab handling
+        // Enhanced keyboard handling
         editor.addEventListener('keydown', (e) => {
+            const start = editor.selectionStart;
+            const end = editor.selectionEnd;
+            const value = editor.value;
+            const hasSelection = start !== end;
+
+            // Tab / Shift+Tab handling
             if (e.key === 'Tab') {
                 e.preventDefault();
-                const start = editor.selectionStart;
-                const end = editor.selectionEnd;
-                editor.value = editor.value.substring(0, start) + '    ' + editor.value.substring(end);
-                editor.selectionStart = editor.selectionEnd = start + 4;
+
+                if (hasSelection) {
+                    // Block indent/dedent for multi-line selections
+                    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                    const lineEnd = value.indexOf('\n', end);
+                    const endPos = lineEnd === -1 ? value.length : lineEnd;
+                    const selectedLines = value.substring(lineStart, endPos);
+                    const lines = selectedLines.split('\n');
+
+                    let newLines;
+                    let deltaFirst = 0;
+                    let deltaTotal = 0;
+
+                    if (e.shiftKey) {
+                        // Dedent: remove leading tab or up to 4 spaces
+                        newLines = lines.map((line, i) => {
+                            if (line.startsWith('\t')) {
+                                if (i === 0) deltaFirst = -1;
+                                deltaTotal -= 1;
+                                return line.substring(1);
+                            } else if (line.match(/^ {1,4}/)) {
+                                const spaces = line.match(/^ {1,4}/)[0].length;
+                                if (i === 0) deltaFirst = -spaces;
+                                deltaTotal -= spaces;
+                                return line.substring(spaces);
+                            }
+                            return line;
+                        });
+                    } else {
+                        // Indent: add tab to each line
+                        newLines = lines.map(line => '\t' + line);
+                        deltaFirst = 1;
+                        deltaTotal = lines.length;
+                    }
+
+                    const newText = newLines.join('\n');
+                    editor.value = value.substring(0, lineStart) + newText + value.substring(endPos);
+                    editor.selectionStart = start + deltaFirst;
+                    editor.selectionEnd = end + deltaTotal;
+                } else {
+                    if (e.shiftKey) {
+                        // Dedent current line
+                        const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                        const beforeCursor = value.substring(lineStart, start);
+
+                        if (beforeCursor.startsWith('\t')) {
+                            editor.value = value.substring(0, lineStart) + value.substring(lineStart + 1);
+                            editor.selectionStart = editor.selectionEnd = start - 1;
+                        } else if (beforeCursor.match(/^ {1,4}/)) {
+                            const spaces = beforeCursor.match(/^ {1,4}/)[0].length;
+                            editor.value = value.substring(0, lineStart) + value.substring(lineStart + spaces);
+                            editor.selectionStart = editor.selectionEnd = start - spaces;
+                        }
+                    } else {
+                        // Insert real tab
+                        editor.value = value.substring(0, start) + '\t' + value.substring(end);
+                        editor.selectionStart = editor.selectionEnd = start + 1;
+                    }
+                }
+                updateHighlight();
+                return;
+            }
+
+            // Enter: auto-indent
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                const currentLine = value.substring(lineStart, start);
+                const indent = currentLine.match(/^[\t ]*/)[0];
+
+                // Add extra indent after { or (
+                const trimmed = currentLine.trimEnd();
+                let extraIndent = '';
+                if (trimmed.endsWith('{') || trimmed.endsWith('(') || trimmed.endsWith('[')) {
+                    extraIndent = '\t';
+                }
+
+                editor.value = value.substring(0, start) + '\n' + indent + extraIndent + value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 1 + indent.length + extraIndent.length;
+                updateHighlight();
+                return;
+            }
+
+            // Auto-close brackets and quotes
+            const pairs = {
+                '(': ')',
+                '[': ']',
+                '{': '}',
+                '"': '"',
+                "'": "'",
+                '`': '`'
+            };
+
+            if (pairs[e.key] && !hasSelection) {
+                const nextChar = value[start];
+                const prevChar = value[start - 1];
+
+                // For quotes, only auto-close if not escaping and not inside a word
+                if (e.key === '"' || e.key === "'" || e.key === '`') {
+                    // Skip if the next char is the same quote (user is closing)
+                    if (nextChar === e.key) {
+                        e.preventDefault();
+                        editor.selectionStart = editor.selectionEnd = start + 1;
+                        return;
+                    }
+                    // Don't auto-close if preceded by backslash or alphanumeric
+                    if (prevChar === '\\' || /\w/.test(prevChar)) {
+                        return;
+                    }
+                }
+
+                e.preventDefault();
+                editor.value = value.substring(0, start) + e.key + pairs[e.key] + value.substring(end);
+                editor.selectionStart = editor.selectionEnd = start + 1;
+                updateHighlight();
+                return;
+            }
+
+            // Skip over closing brackets/quotes if already there
+            const closers = [')', ']', '}', '"', "'", '`'];
+            if (closers.includes(e.key) && value[start] === e.key) {
+                e.preventDefault();
+                editor.selectionStart = editor.selectionEnd = start + 1;
+                return;
+            }
+
+            // Backspace: delete matching pair if empty
+            if (e.key === 'Backspace' && !hasSelection) {
+                const prevChar = value[start - 1];
+                const nextChar = value[start];
+                if (pairs[prevChar] && pairs[prevChar] === nextChar) {
+                    e.preventDefault();
+                    editor.value = value.substring(0, start - 1) + value.substring(start + 1);
+                    editor.selectionStart = editor.selectionEnd = start - 1;
+                    updateHighlight();
+                    return;
+                }
             }
         });
 
