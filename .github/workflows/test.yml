@@ -124,10 +124,14 @@ jobs:
         cd hemlock
         make
         echo "$PWD" >> $GITHUB_PATH
+        # Store hemlock directory for bwrap binds
+        echo "HEMLOCK_DIR=$PWD" >> $GITHUB_ENV
 
     - name: Verify hemlock installation
       run: |
         hemlock --version
+        echo "Hemlock binary at: $(which hemlock)"
+        echo "HEMLOCK_DIR: $HEMLOCK_DIR"
 
     - name: Create test temp directory
       run: |
@@ -141,7 +145,7 @@ jobs:
         # Write a simple test file
         echo 'print("hello from sandbox");' > /var/tmp/hemlock-test/test.hml
 
-        # Run with bubblewrap
+        # Run with bubblewrap - bind hemlock directory
         bwrap \
           --unshare-user \
           --unshare-pid \
@@ -158,6 +162,7 @@ jobs:
           --ro-bind /bin /bin \
           --ro-bind-try /sbin /sbin \
           --ro-bind-try /usr/local /usr/local \
+          --ro-bind "$HEMLOCK_DIR" "$HEMLOCK_DIR" \
           --dir /var \
           --dir /var/tmp \
           --ro-bind /var/tmp/hemlock-test /var/tmp/hemlock-test \
@@ -167,7 +172,7 @@ jobs:
           --proc /proc \
           --hostname sandbox \
           --clearenv \
-          --setenv PATH /usr/local/bin:/usr/bin:/bin \
+          --setenv PATH "$HEMLOCK_DIR:/usr/local/bin:/usr/bin:/bin" \
           --setenv HOME /tmp \
           -- hemlock --sandbox /var/tmp/hemlock-test/test.hml
 
@@ -188,13 +193,14 @@ jobs:
           --ro-bind-try /lib64 /lib64 \
           --ro-bind /bin /bin \
           --ro-bind-try /usr/local /usr/local \
+          --ro-bind "$HEMLOCK_DIR" "$HEMLOCK_DIR" \
           --dir /var/tmp \
           --ro-bind /var/tmp/hemlock-test /var/tmp/hemlock-test \
           --tmpfs /tmp \
           --dev /dev \
           --proc /proc \
           --clearenv \
-          --setenv PATH /usr/local/bin:/usr/bin:/bin \
+          --setenv PATH "$HEMLOCK_DIR:/usr/local/bin:/usr/bin:/bin" \
           -- hemlock --sandbox /var/tmp/hemlock-test/arith.hml)
 
         echo "Output: $OUTPUT"
@@ -224,13 +230,14 @@ jobs:
           --ro-bind-try /lib64 /lib64 \
           --ro-bind /bin /bin \
           --ro-bind-try /usr/local /usr/local \
+          --ro-bind "$HEMLOCK_DIR" "$HEMLOCK_DIR" \
           --dir /var/tmp \
           --ro-bind /var/tmp/hemlock-test /var/tmp/hemlock-test \
           --tmpfs /tmp \
           --dev /dev \
           --proc /proc \
           --clearenv \
-          --setenv PATH /usr/local/bin:/usr/bin:/bin \
+          --setenv PATH "$HEMLOCK_DIR:/usr/local/bin:/usr/bin:/bin" \
           -- hemlock --sandbox /var/tmp/hemlock-test/json.hml)
 
         echo "Output: $OUTPUT"
@@ -258,13 +265,14 @@ jobs:
           --ro-bind-try /lib64 /lib64 \
           --ro-bind /bin /bin \
           --ro-bind-try /usr/local /usr/local \
+          --ro-bind "$HEMLOCK_DIR" "$HEMLOCK_DIR" \
           --dir /var/tmp \
           --ro-bind /var/tmp/hemlock-test /var/tmp/hemlock-test \
           --tmpfs /tmp \
           --dev /dev \
           --proc /proc \
           --clearenv \
-          --setenv PATH /usr/local/bin:/usr/bin:/bin \
+          --setenv PATH "$HEMLOCK_DIR:/usr/local/bin:/usr/bin:/bin" \
           -- hemlock --sandbox /var/tmp/hemlock-test/net.hml
 
         echo "Network isolation test passed!"
@@ -292,13 +300,14 @@ jobs:
           --ro-bind-try /lib64 /lib64 \
           --ro-bind /bin /bin \
           --ro-bind-try /usr/local /usr/local \
+          --ro-bind "$HEMLOCK_DIR" "$HEMLOCK_DIR" \
           --dir /var/tmp \
           --ro-bind /var/tmp/hemlock-test /var/tmp/hemlock-test \
           --tmpfs /tmp \
           --dev /dev \
           --proc /proc \
           --clearenv \
-          --setenv PATH /usr/local/bin:/usr/bin:/bin \
+          --setenv PATH "$HEMLOCK_DIR:/usr/local/bin:/usr/bin:/bin" \
           -- hemlock --sandbox /var/tmp/hemlock-test/fs_write.hml 2>&1 || true)
 
         echo "Output: $OUTPUT"

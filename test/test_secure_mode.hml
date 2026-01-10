@@ -29,6 +29,21 @@ if (BWRAP_PATH == null) {
     BWRAP_PATH = "bwrap";
 }
 
+// Get absolute path of hemlock and its directory for bwrap binds
+fn get_hemlock_dir() {
+    let result = run_capture(["which", HEMLOCK_PATH]);
+    if (result["code"] == 0) {
+        let abs_path = result["stdout"].trim();
+        // Get directory from path (remove /hemlock from end)
+        let parts = abs_path.split("/");
+        parts.pop();  // Remove filename
+        return parts.join("/");
+    }
+    return null;
+}
+
+let HEMLOCK_DIR = get_hemlock_dir();
+
 let TEMP_DIR = "/var/tmp/hemlock-test";
 
 // =============================================================================
@@ -92,6 +107,14 @@ fn cleanup_file(path) {
 fn build_bwrap_command(temp_file) {
     let inner_cmd = `"${HEMLOCK_PATH}" --sandbox "${temp_file}"`;
 
+    // Build path with hemlock directory if available
+    let sandbox_path = "/usr/local/bin:/usr/bin:/bin";
+    let hemlock_bind = "";
+    if (HEMLOCK_DIR != null) {
+        sandbox_path = `${HEMLOCK_DIR}:${sandbox_path}`;
+        hemlock_bind = `--ro-bind "${HEMLOCK_DIR}" "${HEMLOCK_DIR}" `;
+    }
+
     let bwrap_cmd = `"${BWRAP_PATH}" ` +
         `--unshare-user ` +
         `--unshare-pid ` +
@@ -109,6 +132,7 @@ fn build_bwrap_command(temp_file) {
         `--ro-bind /bin /bin ` +
         `--ro-bind-try /sbin /sbin ` +
         `--ro-bind-try /usr/local /usr/local ` +
+        hemlock_bind +
         `--dir /var ` +
         `--dir /var/tmp ` +
         `--ro-bind "${TEMP_DIR}" "${TEMP_DIR}" ` +
@@ -118,7 +142,7 @@ fn build_bwrap_command(temp_file) {
         `--proc /proc ` +
         `--hostname sandbox ` +
         `--clearenv ` +
-        `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
+        `--setenv PATH ${sandbox_path} ` +
         `--setenv HOME /tmp ` +
         `-- sh -c "${inner_cmd}"`;
 
