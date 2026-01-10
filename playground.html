@@ -438,6 +438,7 @@
                     <button data-example="input">User Input (stdin)</button>
                 </div>
             </div>
+            <button id="format-btn">{ } Format</button>
             <button id="check-btn">✓ Check</button>
             <button id="run-btn" class="primary">▶ Run</button>
         </div>
@@ -866,6 +867,7 @@
         const output = document.getElementById('output');
         const runBtn = document.getElementById('run-btn');
         const checkBtn = document.getElementById('check-btn');
+        const formatBtn = document.getElementById('format-btn');
         const statusDot = document.getElementById('status-dot');
         const statusText = document.getElementById('status-text');
         const versionInfo = document.getElementById('version-info');
@@ -997,7 +999,7 @@
         // Check syntax
         async function checkSyntax() {
             if (isRunning) return;
-            
+
             const code = editor.value;
             if (!code.trim()) {
                 output.innerHTML = '<span class="output-info">No code to check</span>';
@@ -1014,7 +1016,7 @@
                 });
 
                 const data = await res.json();
-                
+
                 if (data.valid) {
                     output.innerHTML = '<span class="output-success">✓ Syntax OK</span>';
                     setStatus('Valid');
@@ -1026,6 +1028,53 @@
             } catch (e) {
                 output.innerHTML = `<span class="output-error">Failed to connect to API: ${e.message}</span>`;
                 setStatus('API Error', true);
+            }
+        }
+
+        // Format code
+        async function formatCode() {
+            if (isRunning) return;
+
+            const code = editor.value;
+            if (!code.trim()) {
+                output.innerHTML = '<span class="output-info">No code to format</span>';
+                return;
+            }
+
+            isRunning = true;
+            runBtn.disabled = true;
+            checkBtn.disabled = true;
+            formatBtn.disabled = true;
+            setStatus('Formatting...', false, true);
+
+            try {
+                const res = await fetch(`${API_URL}/format`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code })
+                });
+
+                const data = await res.json();
+
+                if (data.success) {
+                    // Update editor with formatted code
+                    editor.value = data.formatted;
+                    updateHighlight();
+                    output.innerHTML = '<span class="output-success">✓ Code formatted</span>';
+                    setStatus('Formatted');
+                } else {
+                    output.innerHTML = `<span class="output-error">Format error: ${escapeHtml(data.error)}</span>`;
+                    setStatus('Format Error', true);
+                }
+
+            } catch (e) {
+                output.innerHTML = `<span class="output-error">Failed to connect to API: ${e.message}</span>`;
+                setStatus('API Error', true);
+            } finally {
+                isRunning = false;
+                runBtn.disabled = false;
+                checkBtn.disabled = false;
+                formatBtn.disabled = false;
             }
         }
 
@@ -1058,6 +1107,7 @@
         // Event listeners
         runBtn.addEventListener('click', runCode);
         checkBtn.addEventListener('click', checkSyntax);
+        formatBtn.addEventListener('click', formatCode);
 
         // Syntax highlighting events
         editor.addEventListener('input', updateHighlight);

@@ -749,6 +749,120 @@ fn handle_check(body) {
     });
 }
 
+fn build_bwrap_format_command(temp_file) {
+    // Build bubblewrap command for formatting (needs write access to temp file)
+    let format_cmd = `"${CONFIG["hemlock_path"]}" format "${temp_file}"`;
+
+    let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
+        `--unshare-user ` +
+        `--unshare-net ` +
+        `--unshare-ipc ` +
+        `--uid 65534 ` +
+        `--gid 65534 ` +
+        `--die-with-parent ` +
+        `--new-session ` +
+        `--ro-bind /usr /usr ` +
+        `--ro-bind /lib /lib ` +
+        `--ro-bind-try /lib64 /lib64 ` +
+        `--ro-bind /bin /bin ` +
+        `--ro-bind-try /usr/local /usr/local ` +
+        `--dir /var ` +
+        `--dir /var/tmp ` +
+        // Need write access for formatting (bind instead of ro-bind)
+        `--bind "${CONFIG["temp_dir"]}" "${CONFIG["temp_dir"]}" ` +
+        `--tmpfs /tmp ` +
+        `--clearenv ` +
+        `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
+        `-- sh -c "${format_cmd}"`;
+
+    return bwrap_cmd;
+}
+
+fn handle_format(body) {
+    // Parse JSON body
+    let data = null;
+    try {
+        data = parse(body);
+    } catch (e) {
+        return json_response(400, {
+            success: false,
+            error: "Invalid JSON body"
+        });
+    }
+
+    // Get code from body
+    let code = data["code"];
+    if (code == null || code == "") {
+        return json_response(400, {
+            success: false,
+            error: "Missing 'code' field"
+        });
+    }
+
+    // Validate code size
+    if (code.length > CONFIG["max_code_size"]) {
+        return json_response(400, {
+            success: false,
+            error: "Code exceeds maximum size limit (100KB)"
+        });
+    }
+
+    // Create temp file with random suffix to prevent predictable filenames
+    ensure_temp_dir();
+    let ts = time_ms();
+    let rand = random_suffix(12);
+    let temp_file = `${CONFIG["temp_dir"]}/format_${ts}_${rand}.hml`;
+    write_file(temp_file, code);
+
+    // Run hemlock format with optional sandboxing
+    // hemlock format FILE modifies the file in place
+    let result = null;
+    if (CONFIG["secure_mode"]) {
+        let bwrap_cmd = build_bwrap_format_command(temp_file);
+        result = run_shell(`timeout 30 ${bwrap_cmd} 2>&1`);
+    } else {
+        result = run_shell(`timeout 30 "${CONFIG["hemlock_path"]}" format "${temp_file}" 2>&1`);
+    }
+
+    // Read the formatted code back
+    let formatted_code = "";
+    let format_error = "";
+
+    if (result["code"] == 0) {
+        // Success - read the formatted file
+        if (exists(temp_file)) {
+            formatted_code = read_file(temp_file);
+        }
+    } else {
+        // Format failed - get error message
+        format_error = result["stdout"];
+        if ((format_error == "" || format_error == null) && result["stderr"] != null) {
+            format_error = result["stderr"];
+        }
+        // Clean up temp file path from error messages
+        if (format_error != "" && format_error != null) {
+            format_error = format_error.split(temp_file).join("main.hml");
+        }
+    }
+
+    // Cleanup temp file
+    if (exists(temp_file)) {
+        remove_file(temp_file);
+    }
+
+    if (result["code"] == 0) {
+        return json_response(200, {
+            success: true,
+            formatted: formatted_code
+        });
+    } else {
+        return json_response(200, {
+            success: false,
+            error: format_error
+        });
+    }
+}
+
 fn handle_execute(body) {
     // Parse JSON body
     let data = null;
@@ -946,6 +1060,8 @@ fn handle_connection(stream) {
             response = handle_execute(req["body"]);
         } else if (path == "/check" && method == "POST") {
             response = handle_check(req["body"]);
+        } else if (path == "/format" && method == "POST") {
+            response = handle_format(req["body"]);
         } else {
             response = handle_not_found(path);
         }
@@ -996,6 +1112,7 @@ fn main() {
     print("  GET  /health  - Health check");
     print("  GET  /version - Version info");
     print("  POST /check   - Type check code (hemlockc)");
+    print("  POST /format  - Format code (hemlock fmt)");
     print("  POST /execute - Execute code");
     print("");
     print("Press Ctrl+C to stop.");
