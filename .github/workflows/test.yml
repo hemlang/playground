@@ -83,11 +83,30 @@ jobs:
         bwrap --version
         echo "Bubblewrap installed successfully"
 
+    - name: Enable unprivileged user namespaces
+      run: |
+        # Enable unprivileged user namespaces (required for bwrap without root)
+        echo "Enabling unprivileged user namespaces..."
+
+        # Check current setting
+        if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
+          echo "Current setting: $(cat /proc/sys/kernel/unprivileged_userns_clone)"
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+        fi
+
+        # Also check AppArmor restrictions on Ubuntu
+        if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+          echo "AppArmor restriction: $(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)"
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        fi
+
+        echo "User namespace configuration complete"
+
     - name: Check kernel namespace support
       run: |
         echo "Checking unprivileged user namespaces..."
         if [ -f /proc/sys/kernel/unprivileged_userns_clone ]; then
-          cat /proc/sys/kernel/unprivileged_userns_clone
+          echo "unprivileged_userns_clone: $(cat /proc/sys/kernel/unprivileged_userns_clone)"
         else
           echo "sysctl not present, namespaces likely enabled by default"
         fi
