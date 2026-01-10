@@ -115,8 +115,12 @@ check_user_namespaces() {
             check_fail "Unprivileged user namespaces disabled"
             echo ""
             echo "      Enable with:"
-            echo "        sudo sysctl kernel.unprivileged_userns_clone=1"
+            echo "        sudo sysctl -w kernel.unprivileged_userns_clone=1"
             echo "        echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/99-userns.conf"
+            echo ""
+            echo "      On Ubuntu 24.04+ (AppArmor restriction):"
+            echo "        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
+            echo "        echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/99-userns.conf"
 
             if $FIX_MODE; then
                 echo ""

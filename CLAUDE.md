@@ -299,6 +299,28 @@ Run `./setup-sandbox.sh` to check your system's security configuration:
 
 Use `./setup-sandbox.sh --fix` to automatically fix common issues (requires root)
 
+### Troubleshooting User Namespaces
+
+If you see the message "User namespaces not available", enable them with:
+
+```bash
+# Standard Linux systems
+sudo sysctl -w kernel.unprivileged_userns_clone=1
+
+# Ubuntu 24.04+ (AppArmor restriction)
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+```
+
+To make the change persistent across reboots:
+
+```bash
+# Standard Linux systems
+echo 'kernel.unprivileged_userns_clone=1' | sudo tee /etc/sysctl.d/99-userns.conf
+
+# Ubuntu 24.04+
+echo 'kernel.apparmor_restrict_unprivileged_userns=0' | sudo tee /etc/sysctl.d/99-userns.conf
+```
+
 ## Quick Start
 
 ```bash
