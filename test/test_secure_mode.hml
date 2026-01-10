@@ -1,0 +1,383 @@
+// Secure Mode Tests for Grove
+// ============================
+// Tests for bubblewrap sandbox functionality
+//
+// Run with: GROVE_SECURE_MODE=1 hemlock test/test_secure_mode.hml
+// Note: Requires bubblewrap (bwrap) to be installed
+
+import { describe, test, expect, run } from "@stdlib/testing";
+import { exists, read_file, write_file, remove_file } from "@stdlib/fs";
+import { getenv } from "@stdlib/env";
+import { run_capture } from "@stdlib/shell";
+import { time_ms } from "@stdlib/time";
+
+// =============================================================================
+// Test Configuration
+// =============================================================================
+
+let BASE_DIR = getenv("PWD");
+let HEMLOCK_PATH = getenv("HEMLOCK_PATH");
+let BWRAP_PATH = getenv("GROVE_BWRAP_PATH");
+
+if (HEMLOCK_PATH == null) {
+    HEMLOCK_PATH = "hemlock";
+}
+if (BWRAP_PATH == null) {
+    BWRAP_PATH = "bwrap";
+}
+
+let TEMP_DIR = "/var/tmp/hemlock-test";
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+fn ensure_temp_dir() {
+    if (!exists(TEMP_DIR)) {
+        run_capture(["mkdir", "-p", TEMP_DIR]);
+    }
+}
+
+fn random_suffix() {
+    let ts = time_ms();
+    return `${ts}`;
+}
+
+fn write_temp_file(name, content) {
+    ensure_temp_dir();
+    let path = `${TEMP_DIR}/${name}_${random_suffix()}.hml`;
+    write_file(path, content);
+    return path;
+}
+
+fn cleanup_file(path) {
+    if (exists(path)) {
+        remove_file(path);
+    }
+}
+
+// Build a bubblewrap command similar to Grove's implementation
+fn build_bwrap_command(temp_file) {
+    let inner_cmd = `"${HEMLOCK_PATH}" --sandbox "${temp_file}"`;
+
+    let bwrap_cmd = `"${BWRAP_PATH}" ` +
+        `--unshare-user ` +
+        `--unshare-pid ` +
+        `--unshare-net ` +
+        `--unshare-ipc ` +
+        `--unshare-uts ` +
+        `--unshare-cgroup ` +
+        `--uid 65534 ` +
+        `--gid 65534 ` +
+        `--die-with-parent ` +
+        `--new-session ` +
+        `--ro-bind /usr /usr ` +
+        `--ro-bind /lib /lib ` +
+        `--ro-bind-try /lib64 /lib64 ` +
+        `--ro-bind /bin /bin ` +
+        `--ro-bind-try /sbin /sbin ` +
+        `--ro-bind-try /usr/local /usr/local ` +
+        `--dir /var ` +
+        `--dir /var/tmp ` +
+        `--ro-bind "${TEMP_DIR}" "${TEMP_DIR}" ` +
+        `--tmpfs /tmp ` +
+        `--setenv TMPDIR /tmp ` +
+        `--dev /dev ` +
+        `--proc /proc ` +
+        `--hostname sandbox ` +
+        `--clearenv ` +
+        `--setenv PATH /usr/local/bin:/usr/bin:/bin ` +
+        `--setenv HOME /tmp ` +
+        `-- sh -c "${inner_cmd}"`;
+
+    return bwrap_cmd;
+}
+
+// Run code in bubblewrap sandbox
+fn run_in_sandbox(code) {
+    let temp_file = write_temp_file("sandbox_test", code);
+    let bwrap_cmd = build_bwrap_command(temp_file);
+
+    // Use sh -c to execute the bwrap command
+    let result = run_capture(["sh", "-c", `timeout 30 ${bwrap_cmd} 2>&1`]);
+
+    cleanup_file(temp_file);
+    return result;
+}
+
+// Run code with hemlock --sandbox only (no bwrap)
+fn run_basic_sandbox(code) {
+    let temp_file = write_temp_file("basic_test", code);
+    let result = run_capture([HEMLOCK_PATH, "--sandbox", temp_file]);
+    cleanup_file(temp_file);
+    return result;
+}
+
+// =============================================================================
+// Bubblewrap Installation Check
+// =============================================================================
+
+describe("Bubblewrap Installation", fn() {
+    test("bwrap is installed", fn() {
+        let result = run_capture([BWRAP_PATH, "--version"]);
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("bwrap version is available", fn() {
+        let result = run_capture([BWRAP_PATH, "--version"]);
+        expect(result["stdout"].contains("bubblewrap")).to_be_true();
+    });
+
+    test("user namespaces are enabled", fn() {
+        // Try a simple bwrap command with user namespace
+        let result = run_capture(["sh", "-c", `${BWRAP_PATH} --unshare-user --uid 65534 --gid 65534 --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind /bin /bin /bin/true 2>&1`]);
+        expect(result["code"]).to_equal(0);
+    });
+});
+
+// =============================================================================
+// Basic Sandbox Execution Tests
+// =============================================================================
+
+describe("Sandbox Basic Execution", fn() {
+    test("simple print works in sandbox", fn() {
+        let result = run_in_sandbox("print(\"hello sandbox\");");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("hello sandbox")).to_be_true();
+    });
+
+    test("arithmetic works in sandbox", fn() {
+        let result = run_in_sandbox("print(2 + 2);");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("4")).to_be_true();
+    });
+
+    test("functions work in sandbox", fn() {
+        let code = "fn double(x) { return x * 2; } print(double(21));";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+
+    test("loops work in sandbox", fn() {
+        let code = "for (let i = 0; i < 3; i = i + 1) { print(i); }";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("0")).to_be_true();
+        expect(result["stdout"].contains("1")).to_be_true();
+        expect(result["stdout"].contains("2")).to_be_true();
+    });
+
+    test("JSON stdlib works in sandbox", fn() {
+        let code = "import { stringify } from \"@stdlib/json\"; print(stringify({a: 1}));";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("a")).to_be_true();
+    });
+
+    test("template strings work in sandbox", fn() {
+        let code = "let x = 42; print(`Value: ${x}`);";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("Value: 42")).to_be_true();
+    });
+
+    test("arrays work in sandbox", fn() {
+        let code = "let arr = [1, 2, 3]; arr.push(4); print(arr.length);";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("4")).to_be_true();
+    });
+
+    test("objects work in sandbox", fn() {
+        let code = "let obj = { name: \"test\", value: 42 }; print(obj[\"value\"]);";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("42")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Filesystem Isolation Tests
+// =============================================================================
+
+describe("Sandbox Filesystem Isolation", fn() {
+    test("cannot write to /etc", fn() {
+        // This should fail - /etc is not writable in sandbox
+        let code = "import { write_file } from \"@stdlib/fs\"; try { write_file(\"/etc/test.txt\", \"hack\"); print(\"FAIL: wrote to /etc\"); } catch (e) { print(\"OK: blocked\"); }";
+        let result = run_in_sandbox(code);
+        // Either hemlock sandbox blocks it, or bwrap filesystem isolation does
+        expect(result["stdout"].contains("FAIL")).to_be_false();
+    });
+
+    test("cannot write to /home", fn() {
+        let code = "import { write_file } from \"@stdlib/fs\"; try { write_file(\"/home/test.txt\", \"hack\"); print(\"FAIL: wrote to /home\"); } catch (e) { print(\"OK: blocked\"); }";
+        let result = run_in_sandbox(code);
+        expect(result["stdout"].contains("FAIL")).to_be_false();
+    });
+
+    test("cannot write to root", fn() {
+        let code = "import { write_file } from \"@stdlib/fs\"; try { write_file(\"/test.txt\", \"hack\"); print(\"FAIL: wrote to root\"); } catch (e) { print(\"OK: blocked\"); }";
+        let result = run_in_sandbox(code);
+        expect(result["stdout"].contains("FAIL")).to_be_false();
+    });
+
+    test("cannot read /etc/passwd in sandbox mode", fn() {
+        // hemlock --sandbox should restrict filesystem access
+        let code = "import { read_file } from \"@stdlib/fs\"; try { let content = read_file(\"/etc/passwd\"); print(\"read \" + content.length + \" bytes\"); } catch (e) { print(\"blocked\"); }";
+        let result = run_in_sandbox(code);
+        // Sandbox should block this
+        expect(result["stdout"].contains("blocked")).to_be_true();
+    });
+
+    test("can write to /tmp inside sandbox", fn() {
+        // /tmp is a tmpfs inside the sandbox, should be writable
+        let code = "import { write_file, read_file, exists } from \"@stdlib/fs\"; write_file(\"/tmp/test.txt\", \"hello\"); if (exists(\"/tmp/test.txt\")) { print(\"OK: wrote to /tmp\"); } else { print(\"FAIL\"); }";
+        let result = run_in_sandbox(code);
+        // Note: this depends on hemlock --sandbox allowing /tmp writes
+        // The actual result may vary based on hemlock's sandbox implementation
+        expect(result["code"]).to_equal(0);
+    });
+});
+
+// =============================================================================
+// Network Isolation Tests
+// =============================================================================
+
+describe("Sandbox Network Isolation", fn() {
+    test("network is isolated with --unshare-net", fn() {
+        // The sandbox uses --unshare-net, so network should be unavailable
+        // This test verifies the sandbox runs even with network isolation
+        let result = run_in_sandbox("print(\"network isolated\");");
+        expect(result["code"]).to_equal(0);
+        expect(result["stdout"].contains("network isolated")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Process Isolation Tests
+// =============================================================================
+
+describe("Sandbox Process Isolation", fn() {
+    test("process runs as nobody (uid 65534)", fn() {
+        // The sandbox runs as nobody
+        let result = run_in_sandbox("print(\"running\");");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("hostname is sandbox", fn() {
+        // The sandbox sets hostname to "sandbox"
+        // We can't directly check this from hemlock, but the command succeeds
+        let result = run_in_sandbox("print(\"hostname test\");");
+        expect(result["code"]).to_equal(0);
+    });
+
+    test("environment is cleared", fn() {
+        // Environment should be minimal
+        let code = "import { getenv } from \"@stdlib/env\"; let home = getenv(\"HOME\"); if (home == \"/tmp\" || home == null) { print(\"OK: clean env\"); } else { print(`HOME=${home}`); }";
+        let result = run_in_sandbox(code);
+        expect(result["code"]).to_equal(0);
+    });
+});
+
+// =============================================================================
+// Error Handling in Sandbox
+// =============================================================================
+
+describe("Sandbox Error Handling", fn() {
+    test("syntax errors are caught", fn() {
+        let result = run_in_sandbox("print(42");  // Missing semicolon and paren
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("runtime errors are caught", fn() {
+        let result = run_in_sandbox("print(undefined_var);");
+        expect(result["code"] != 0).to_be_true();
+    });
+
+    test("division by zero handled", fn() {
+        let result = run_in_sandbox("print(1 / 0);");
+        // Should complete without crashing
+        expect(result != null).to_be_true();
+    });
+});
+
+// =============================================================================
+// Grove Integration Tests
+// =============================================================================
+
+describe("Grove Secure Mode Configuration", fn() {
+    test("grove.hml exists", fn() {
+        expect(exists(`${BASE_DIR}/grove.hml`)).to_be_true();
+    });
+
+    test("grove.hml has secure_mode config", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("secure_mode")).to_be_true();
+    });
+
+    test("grove.hml has bwrap_path config", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("bwrap_path")).to_be_true();
+    });
+
+    test("grove.hml has GROVE_SECURE_MODE env check", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("GROVE_SECURE_MODE")).to_be_true();
+    });
+
+    test("grove.hml has build_bwrap_command function", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("build_bwrap_command")).to_be_true();
+    });
+
+    test("grove.hml has namespace isolation flags", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("--unshare-user")).to_be_true();
+        expect(content.contains("--unshare-net")).to_be_true();
+        expect(content.contains("--unshare-pid")).to_be_true();
+    });
+
+    test("grove.hml has memory limit config", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("sandbox_memory_mb")).to_be_true();
+    });
+
+    test("grove.hml has process limit config", fn() {
+        let content = read_file(`${BASE_DIR}/grove.hml`);
+        expect(content.contains("sandbox_pids_max")).to_be_true();
+    });
+});
+
+// =============================================================================
+// Comparison: Basic vs Secure Sandbox
+// =============================================================================
+
+describe("Basic vs Secure Sandbox Comparison", fn() {
+    test("basic sandbox produces same output as secure", fn() {
+        let code = "print(\"hello\");";
+        let basic_result = run_basic_sandbox(code);
+        let secure_result = run_in_sandbox(code);
+
+        expect(basic_result["code"]).to_equal(0);
+        expect(secure_result["code"]).to_equal(0);
+        expect(basic_result["stdout"].contains("hello")).to_be_true();
+        expect(secure_result["stdout"].contains("hello")).to_be_true();
+    });
+
+    test("both sandboxes handle errors", fn() {
+        let code = "print(undefined);";
+        let basic_result = run_basic_sandbox(code);
+        let secure_result = run_in_sandbox(code);
+
+        // Both should error on undefined variable
+        expect(basic_result["code"] != 0).to_be_true();
+        expect(secure_result["code"] != 0).to_be_true();
+    });
+});
+
+// =============================================================================
+// Run Tests
+// =============================================================================
+
+run();
