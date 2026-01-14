@@ -492,11 +492,13 @@ fn build_bwrap_command(temp_file, stdin_file, timeout_sec) {
 
     // Construct bwrap command
     // Note: Using bash -c to set ulimits inside the sandbox (sh/dash doesn't support -u)
+    // Note: We don't use --unshare-net because setting up loopback requires CAP_NET_ADMIN
+    //       which unprivileged users don't have. Network restrictions are handled by
+    //       hemlock's --sandbox flag instead.
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         // Namespace isolation
         `--unshare-user ` +
         `--unshare-pid ` +
-        `--unshare-net ` +
         `--unshare-ipc ` +
         `--unshare-uts ` +
         `--unshare-cgroup ` +
@@ -651,11 +653,11 @@ fn handle_version() {
 fn build_bwrap_check_command(temp_file) {
     // Build bubblewrap command for type checking (lighter than execute)
     // hemlockc only parses, so we can be more restrictive
+    // Note: We don't use --unshare-net because setting up loopback requires CAP_NET_ADMIN
     let check_cmd = `"${CONFIG["hemlockc_path"]}" --check "${temp_file}"`;
 
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         `--unshare-user ` +
-        `--unshare-net ` +
         `--unshare-ipc ` +
         `--uid 65534 ` +
         `--gid 65534 ` +
@@ -751,11 +753,11 @@ fn handle_check(body) {
 
 fn build_bwrap_format_command(temp_file) {
     // Build bubblewrap command for formatting (needs write access to temp file)
+    // Note: We don't use --unshare-net because setting up loopback requires CAP_NET_ADMIN
     let format_cmd = `"${CONFIG["hemlock_path"]}" format "${temp_file}"`;
 
     let bwrap_cmd = `"${CONFIG["bwrap_path"]}" ` +
         `--unshare-user ` +
-        `--unshare-net ` +
         `--unshare-ipc ` +
         `--uid 65534 ` +
         `--gid 65534 ` +
