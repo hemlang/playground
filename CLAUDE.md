@@ -161,6 +161,13 @@ hemlock --version
 - [ ] Wire up monaco-languageclient
 - [ ] Verify diagnostics, hover, completion
 
+### Phase 3.5: Browser Execution (WASM) ✓ (Complete)
+- [x] Toolbar **☁ Server / ⬡ Browser** execution-mode toggle (persisted in localStorage)
+- [x] Load the Hemlock interpreter compiled to WebAssembly (`wasm/hemlock.js` + `wasm/hemlock.wasm`)
+- [x] Run code client-side via `Hemlock.init()` + `hemlock.eval()` with captured stdout/stderr
+- [x] `build-wasm.sh` to (re)generate artifacts from `hemlang/hemlock` (`make wasm-interpreter`)
+- [x] Graceful fallback message when artifacts are missing; `?wasm=URL` override for CDN hosting
+
 ### Phase 4: Polish
 - [ ] Example snippets dropdown improvements
 - [ ] UI/UX improvements
