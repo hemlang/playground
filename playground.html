@@ -108,6 +108,36 @@
             cursor: not-allowed;
         }
 
+        /* Execution-mode toggle (Server vs Browser/WASM) */
+        .mode-toggle {
+            display: inline-flex;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .mode-toggle button {
+            border: none;
+            border-radius: 0;
+            background: var(--bg-lighter);
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            gap: 4px;
+        }
+
+        .mode-toggle button + button {
+            border-left: 1px solid var(--border);
+        }
+
+        .mode-toggle button.active {
+            background: var(--accent);
+            color: var(--bg-dark);
+        }
+
+        .mode-toggle button.active:hover {
+            background: #8fb0fa;
+        }
+
         .main-container {
             flex: 1;
             display: flex;
@@ -437,6 +467,10 @@
                     <button data-example="json">JSON Parsing</button>
                     <button data-example="input">User Input (stdin)</button>
                 </div>
+            </div>
+            <div class="mode-toggle" id="mode-toggle" role="group" aria-label="Execution mode">
+                <button data-mode="server" class="active" title="Run on the Grove server">☁ Server</button>
+                <button data-mode="wasm" title="Run in your browser via WebAssembly (no server)">⬡ Browser</button>
             </div>
             <button id="format-btn">{ } Format</button>
             <button id="check-btn">✓ Check</button>
@@ -876,9 +910,90 @@
         const stdinInput = document.getElementById('stdin-input');
         const inputSection = document.getElementById('input-section');
         const inputHeader = document.getElementById('input-header');
+        const modeToggle = document.getElementById('mode-toggle');
 
         // State
         let isRunning = false;
+
+        // ====================================================================
+        // Execution mode: 'server' (Grove HTTP API) or 'wasm' (in-browser)
+        // ====================================================================
+        // Where to load the compiled interpreter from. Override with ?wasm=URL
+        // (e.g. a CDN) if you don't want to serve the artifacts locally.
+        const WASM_BASE = (new URLSearchParams(location.search).get('wasm') || 'wasm/').replace(/\/?$/, '/');
+
+        let executionMode = localStorage.getItem('hemlock-exec-mode') || 'server';
+
+        // Lazy-initialized WASM interpreter handle. Stays null until the user
+        // first switches to (or runs in) browser mode.
+        const wasm = {
+            loading: null,   // Promise while the module is being fetched/initialized
+            hemlock: null,   // Hemlock API instance once ready
+            out: [],         // Captured stdout/stderr lines for the current run
+        };
+
+        // Inject a <script> once and resolve when it has executed. A second
+        // call for the same src is a no-op: re-running the Emscripten glue
+        // (hemlock.js) would redeclare its globals and corrupt the runtime.
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                if (document.querySelector(`script[data-hml-src="${src}"]`)) {
+                    resolve();
+                    return;
+                }
+                const el = document.createElement('script');
+                el.src = src;
+                el.dataset.hmlSrc = src;
+                el.onload = () => resolve();
+                el.onerror = () => reject(new Error(`Failed to load ${src}`));
+                document.head.appendChild(el);
+            });
+        }
+
+        // Load + initialize the Hemlock WASM interpreter exactly once.
+        function initWasm() {
+            if (wasm.hemlock) return Promise.resolve(wasm.hemlock);
+            if (wasm.loading) return wasm.loading;
+
+            wasm.loading = new Promise((resolve, reject) => {
+                // Configure the Emscripten Module before hemlock.js runs.
+                // print/printErr funnel interpreter output into wasm.out so the
+                // active run can render it the same way as server output.
+                window.Module = {
+                    // playground.html lives at the repo root while the artifacts
+                    // live in wasm/, so tell Emscripten where to find hemlock.wasm
+                    // instead of letting it guess (it would 404 at the root).
+                    locateFile: (path) => WASM_BASE + path,
+                    print: (text) => wasm.out.push({ text, err: false }),
+                    printErr: (text) => {
+                        // Drop Emscripten's own startup chatter.
+                        if (/pre-main|\brun\(\)/.test(text)) return;
+                        wasm.out.push({ text, err: true });
+                    },
+                    noInitialRun: true,
+                    onAbort: (what) => reject(new Error('WASM aborted: ' + what)),
+                    // Only initialize the JS API once the wasm exports are live;
+                    // calling it any earlier reads an undefined export table.
+                    onRuntimeInitialized: function() {
+                        Hemlock.init({ Module: window.Module })
+                            .then((h) => { wasm.hemlock = h; resolve(h); })
+                            .catch(reject);
+                    },
+                };
+
+                // hemlock-api.js must be present before onRuntimeInitialized fires.
+                loadScript(WASM_BASE + 'hemlock-api.js')
+                    .then(() => loadScript(WASM_BASE + 'hemlock.js'))
+                    .catch(reject);
+            }).catch((e) => {
+                // Surface the failure but keep hemlock.js out of a re-run loop:
+                // loadScript is idempotent, so a retry won't re-execute the glue.
+                wasm.loading = null;
+                throw e;
+            });
+
+            return wasm.loading;
+        }
 
         // Syntax highlighting
         function updateHighlight() {
@@ -930,6 +1045,10 @@
             if (!code.trim()) {
                 output.innerHTML = '<span class="output-info">No code to run</span>';
                 return;
+            }
+
+            if (executionMode === 'wasm') {
+                return runCodeWasm(code);
             }
 
             isRunning = true;
@@ -993,6 +1112,105 @@
                 isRunning = false;
                 runBtn.disabled = false;
                 checkBtn.disabled = false;
+            }
+        }
+
+        // Run code in the browser via the WASM interpreter (no server).
+        async function runCodeWasm(code) {
+            isRunning = true;
+            runBtn.disabled = true;
+            setStatus('Loading WASM...', false, true);
+            output.innerHTML = '<span class="output-info">Loading interpreter...</span>';
+
+            let hemlock;
+            try {
+                hemlock = await initWasm();
+            } catch (e) {
+                output.innerHTML =
+                    `<span class="output-error">Could not load the WASM interpreter: ${escapeHtml(e.message)}</span>\n` +
+                    `<span class="output-info">Expected the build artifacts at <code>${escapeHtml(WASM_BASE)}hemlock.js</code> and <code>${escapeHtml(WASM_BASE)}hemlock.wasm</code>. ` +
+                    `Run <code>./build-wasm.sh</code> to generate them, or switch back to Server mode.</span>`;
+                setStatus('WASM unavailable', true);
+                isRunning = false;
+                runBtn.disabled = false;
+                return;
+            }
+
+            setStatus('Running...', false, true);
+            output.innerHTML = '<span class="output-info">Executing...</span>';
+
+            // Run on a tick so the status repaints before a long eval blocks the UI.
+            await new Promise((r) => setTimeout(r, 10));
+
+            wasm.out = [];
+            const start = performance.now();
+            let threw = null;
+            try {
+                hemlock.eval(code);
+            } catch (e) {
+                threw = e;
+            }
+            const elapsed = Math.round(performance.now() - start);
+
+            const stdout = wasm.out.filter((l) => !l.err).map((l) => l.text).join('\n');
+            const stderr = wasm.out.filter((l) => l.err).map((l) => l.text).join('\n');
+            const success = !threw && !stderr;
+
+            let html = '';
+            if (stdout) html += `<span class="output-stdout">${escapeHtml(stdout)}</span>`;
+            if (stderr) {
+                if (html) html += '\n';
+                html += `<span class="output-stderr">${escapeHtml(stderr)}</span>`;
+            }
+            if (threw) {
+                if (html) html += '\n';
+                html += `<span class="output-error">${escapeHtml(threw.message)}</span>`;
+            }
+            if (!html) html = '<span class="output-info">(no output)</span>';
+
+            html += '\n\n';
+            const statusClass = success ? 'output-success' : 'output-error';
+            const statusIcon = success ? '✓' : '✗';
+            html += `<span class="${statusClass}">${statusIcon} ${success ? 'Done' : 'Finished with errors'}</span>`;
+            html += `<span class="output-info"> | ${elapsed}ms | in-browser (WASM)</span>`;
+
+            output.innerHTML = html;
+            setStatus(success ? 'Success' : 'Error', !success);
+            isRunning = false;
+            runBtn.disabled = false;
+        }
+
+        // Switch between server and browser (WASM) execution.
+        function setExecutionMode(mode) {
+            executionMode = mode;
+            localStorage.setItem('hemlock-exec-mode', mode);
+
+            modeToggle.querySelectorAll('button').forEach((b) => {
+                b.classList.toggle('active', b.dataset.mode === mode);
+            });
+
+            const browser = mode === 'wasm';
+            // Check/Format require the Grove server; disable them offline.
+            checkBtn.disabled = browser;
+            formatBtn.disabled = browser;
+            const serverOnlyTitle = browser ? 'Requires Server mode' : '';
+            checkBtn.title = serverOnlyTitle;
+            formatBtn.title = serverOnlyTitle;
+            // Stdin is only wired through the server's /execute endpoint.
+            stdinInput.disabled = browser;
+
+            if (browser) {
+                versionInfo.textContent = wasm.hemlock
+                    ? `Hemlock ${wasm.hemlock.version} (WASM)`
+                    : 'Hemlock (WASM) — runs in your browser';
+                // Warm up the module in the background for a snappier first run.
+                initWasm().then(() => {
+                    if (executionMode === 'wasm') {
+                        versionInfo.textContent = `Hemlock ${wasm.hemlock.version} (WASM)`;
+                    }
+                }).catch(() => { /* surfaced on first Run */ });
+            } else {
+                fetchVersion();
             }
         }
 
@@ -1284,8 +1502,13 @@
             inputSection.classList.toggle('collapsed');
         });
 
+        // Execution-mode toggle
+        modeToggle.querySelectorAll('button').forEach((btn) => {
+            btn.addEventListener('click', () => setExecutionMode(btn.dataset.mode));
+        });
+
         // Initialize
-        fetchVersion();
+        setExecutionMode(executionMode);
         updateHighlight();
     </script>
 </body>

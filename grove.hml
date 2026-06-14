@@ -11,7 +11,7 @@
 import { TcpListener } from "@stdlib/net";
 import { stringify, parse } from "@stdlib/json";
 import { time_ms } from "@stdlib/time";
-import { write_file, exists, remove_file, read_file, cwd } from "@stdlib/fs";
+import { write_file, exists, remove_file, read_file, cwd, open, file_stat } from "@stdlib/fs";
 import { run_capture } from "@stdlib/shell";
 import { getenv } from "@stdlib/env";
 
@@ -917,6 +917,72 @@ fn handle_not_found(path) {
     });
 }
 
+// Content type for a static asset, keyed off its file extension.
+fn static_content_type(rel) {
+    if (rel.length >= 5 && rel.substr(rel.length - 5, 5) == ".wasm") {
+        return "application/wasm";
+    }
+    if (rel.length >= 3 && rel.substr(rel.length - 3, 3) == ".js") {
+        return "text/javascript; charset=utf-8";
+    }
+    if (rel.length >= 5 && rel.substr(rel.length - 5, 5) == ".html") {
+        return "text/html; charset=utf-8";
+    }
+    if (rel.length >= 5 && rel.substr(rel.length - 5, 5) == ".json") {
+        return "application/json";
+    }
+    return "application/octet-stream";
+}
+
+// Build just the HTTP response headers (no body). Used for binary static
+// assets, where the body is a byte buffer written to the socket separately
+// so it never passes through string concatenation (which would corrupt it).
+fn build_headers(status, status_text, content_type, content_length) {
+    let h = `HTTP/1.1 ${status} ${status_text}\r\n`;
+    h = h + `Content-Type: ${content_type}\r\n`;
+    h = h + `Content-Length: ${content_length}\r\n`;
+    h = h + `Access-Control-Allow-Origin: ${CONFIG["cors_origin"]}\r\n`;
+    h = h + "Cache-Control: public, max-age=3600\r\n";
+    h = h + "Connection: close\r\n";
+    h = h + "\r\n";
+    return h;
+}
+
+// Serve a file from the playground's wasm/ directory (browser execution mode).
+// Writes directly to the socket so the binary hemlock.wasm is sent byte-for-byte.
+// Returns true if it handled the request.
+fn handle_static(stream, url_path) {
+    // Only ever serve files under wasm/, and never allow path traversal.
+    if (url_path.find("..") != -1) {
+        stream.write(json_response(403, { error: "Forbidden", path: url_path }));
+        return true;
+    }
+    // Strip the leading "/" to get a path relative to the playground root.
+    let rel = url_path.substr(1, url_path.length - 1);
+    if (rel.length < 5 || rel.substr(0, 5) != "wasm/") {
+        return false;  // not a static asset route; let the caller 404
+    }
+
+    let full = `${cwd()}/${rel}`;
+    if (!exists(full)) {
+        stream.write(json_response(404, { error: "Not found", path: url_path }));
+        return true;
+    }
+
+    let info = file_stat(full);
+    let size = info["size"];
+    let ctype = static_content_type(rel);
+
+    // Read the file as bytes and stream headers + body separately.
+    let f = open(full, "r");
+    let body = f.read_bytes(size);
+    f.close();
+
+    stream.write(build_headers(200, "OK", ctype, size));
+    stream.write(body);
+    return true;
+}
+
 // =============================================================================
 // Connection Handler
 // =============================================================================
@@ -1047,6 +1113,7 @@ fn handle_connection(stream) {
         // Route request
         let response = "";
         let method = req["method"];
+        let handled = false;  // set when a handler writes to the stream itself
 
         if (method == "OPTIONS") {
             response = handle_options();
@@ -1062,12 +1129,21 @@ fn handle_connection(stream) {
             response = handle_check(req["body"]);
         } else if (path == "/format" && method == "POST") {
             response = handle_format(req["body"]);
+        } else if (path.length >= 6 && path.substr(0, 6) == "/wasm/" && method == "GET") {
+            // Static assets for browser (WASM) execution mode. handle_static
+            // streams the response (including the binary .wasm) directly.
+            handled = handle_static(stream, path);
+            if (!handled) {
+                response = handle_not_found(path);
+            }
         } else {
             response = handle_not_found(path);
         }
 
-        // Send response
-        stream.write(response);
+        // Send response (unless the handler already wrote to the stream)
+        if (!handled) {
+            stream.write(response);
+        }
         stream.close();
 
     } catch (e) {
